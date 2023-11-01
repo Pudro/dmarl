@@ -17,6 +17,11 @@ https://pettingzoo.farama.org/main/api/aec/#about-aec
 But also there is the Parallel API https://pettingzoo.farama.org/main/api/parallel/
 Oh well
 
+## CleanRL
+- https://docs.cleanrl.dev/
+
+CleanRL is a Deep Reinforcement Learning library that provides high-quality single-file implementation with research-friendly features.
+
 ## Stable Baselines
 - https://stable-baselines3.readthedocs.io/en/master/
 - https://pettingzoo.farama.org/tutorials/sb3/
