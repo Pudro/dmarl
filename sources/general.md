@@ -1,5 +1,7 @@
 ## MAgent2
+- https://magent2.farama.org/
 - https://github.com/Farama-Foundation/MAgent2
+- [Also check out legacy docs - there might be some useful information](https://magent2.farama.org/legacy/get_started/)
 
 Previous project (no longer maintained but some docs might be useful, also: in current docs search results bring the old docs as well):
 
@@ -41,3 +43,8 @@ A collection of existing algorithms and environments
 Ensemble of Deep REinforcement Learning algorithm implementations
 - https://github.com/agi-brain/xuance
 
+# MARL-Papers
+- https://github.com/LantaoYu/MARL-Papers
+
+# HugginFace DeepRL course
+- https://huggingface.co/learn/deep-rl-course
