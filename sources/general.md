@@ -43,8 +43,11 @@ A collection of existing algorithms and environments
 Ensemble of Deep REinforcement Learning algorithm implementations
 - https://github.com/agi-brain/xuance
 
-# MARL-Papers
+## MARL-Papers
 - https://github.com/LantaoYu/MARL-Papers
 
-# HugginFace DeepRL course
+## HugginFace DeepRL course
 - https://huggingface.co/learn/deep-rl-course
+
+## OpenAI Spinning Up
+- https://spinningup.openai.com/en/latest/user/introduction.html
