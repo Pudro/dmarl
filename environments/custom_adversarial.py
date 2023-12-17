@@ -251,6 +251,5 @@ class _parallel_env(magent_parallel_env, EzPickle):
         handles = env.get_handles()
 
         env.add_walls(method="random", n=map_size * map_size * 0.03)
-        # These two lines are changed
-        env.add_agents(handles[0], method="random", n=3)
-        env.add_agents(handles[1], method="random", n=2)
+        env.add_agents(handles[0], method="random", n=map_size * map_size * 0.0125)
+        env.add_agents(handles[1], method="random", n=map_size * map_size * 0.025)
