@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from stable_baselines3.common.buffers import ReplayBuffer
 import torch.optim as optim
 import random
+from .args import Args
 
 # env = adversarial_pursuit_v4.parallel_env(map_size=10, render_mode='human')
 env = custom_adversarial.parallel_env(map_size=32, render_mode='rgb_array')

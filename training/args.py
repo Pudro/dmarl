@@ -3,7 +3,8 @@ from dataclasses import dataclass
 @dataclass
 class Args:
     # exp_name: str = os.path.basename(__file__)[: -len(".py")]
-    # """the name of this experiment"""
+    run_name: str = 'adversarial_dqn'
+    """the name of this experiment"""
     seed: int = 1
     """seed of the experiment"""
     torch_deterministic: bool = True
@@ -12,7 +13,7 @@ class Args:
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
-    wandb_project_name: str = "cleanRL"
+    wandb_project_name: str = "dmarl"
     """the wandb's project name"""
     wandb_entity: str | None = None
     """the entity (team) of wandb's project"""
