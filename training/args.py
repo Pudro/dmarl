@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 @dataclass
 class Args:
+    env_type: 'str' = 'adversarial'
     # exp_name: str = os.path.basename(__file__)[: -len(".py")]
     run_name: str = 'adversarial_dqn'
     """the name of this experiment"""
@@ -51,7 +52,7 @@ class Args:
     """the ending epsilon for exploration"""
     exploration_fraction: float = 0.5
     """the fraction of `total-timesteps` it takes from start-e to go end-e"""
-    learning_starts: int = 10000
+    learning_starts: int = 100
     """timestep to start learning"""
     train_frequency: int = 10
     """the frequency of training"""

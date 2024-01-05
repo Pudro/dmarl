@@ -1,3 +1,4 @@
+from torch.utils.tensorboard.writer import SummaryWriter
 from environments import custom_adversarial
 from time import sleep
 import torch
@@ -8,6 +9,9 @@ import torch.nn.functional as F
 from stable_baselines3.common.buffers import ReplayBuffer
 import torch.optim as optim
 import random
+import datetime
+import time
+import os
 from .args import Args
 
 # env = adversarial_pursuit_v4.parallel_env(map_size=10, render_mode='human')
@@ -28,10 +32,13 @@ class Training:
         for agent_network, target_network in zip(self.agent_networks, self.target_agent_networks):
             target_network.load_state_dict(agent_network.state_dict())
 
+        self.writer = SummaryWriter()
+
     def run(self, episodes=10):
         global_step = 0
         actions = {agent: env.action_space(agent).sample() for agent in env.agents} # random sample of actions
-        for _ in range(episodes):
+        for episode in range(episodes):
+            current_episode_rewards = []
             observations, infos = env.reset()
             while env.agents: #run until the agents die? or unil the env stops (implementation details should be in MAgent2)
                 epsilon = linear_schedule(Args.start_e, Args.end_e, int(Args.exploration_fraction * Args.total_timesteps), global_step)
@@ -45,14 +52,7 @@ class Training:
                     actions[network.agent_id] = action
 
                 next_observations, rewards, terminations, truncations, infos = env.step(actions)
-
-                # TODO: summary writer
-                # if 'final_info' in infos:
-                #     for info in infos['final_info']:
-                #         if info and 'episode' in info:
-                #             print(f"global_step={global_step}, episodic_return={info['episode']['r']}")
-                #             writer.add_scalar("charts/episodic_return", info["episode"]["r"], global_step)
-                #             writer.add_scalar("charts/episodic_length", info["episode"]["l"], global_step)
+                current_episode_rewards.append(rewards)
 
                 # TRY NOT TO MODIFY: save data to reply buffer; handle `final_observation`
                 for network in self.agent_networks:
@@ -77,16 +77,14 @@ class Training:
                         if global_step % Args.train_frequency == 0:
                             data = network.rb.sample(Args.batch_size)
                             with torch.no_grad():
-                                target_max, _ = target_network(data.next_observations).max(dim=1)
+                                target_max, _ = target_network(data.next_observations.reshape(128, -1)).max(dim=1)
                                 td_target = data.rewards.flatten() + Args.gamma * target_max * (1 - data.dones.flatten())
-                            old_val = network(data.observations).gather(1, data.actions).squeeze()
+                            old_val = network(data.observations.reshape(128, -1)).gather(1, data.actions).squeeze()
                             loss = F.mse_loss(td_target, old_val)
 
-                            # if global_step % 100 == 0:
-                            #     writer.add_scalar("losses/td_loss", loss, global_step)
-                            #     writer.add_scalar("losses/q_values", old_val.mean().item(), global_step)
-                            #     print("SPS:", int(global_step / (time.time() - start_time)))
-                            #     writer.add_scalar("charts/SPS", int(global_step / (time.time() - start_time)), global_step)
+                            if global_step % 1 == 0:
+                                self.writer.add_scalar(f"losses/{network.agent_id}/td_loss", loss, global_step)
+                                self.writer.add_scalar(f"q_values/{network.agent_id}/q_values", old_val.mean().item(), global_step)
 
                             # optimize the model
                             network.optimizer.zero_grad()
@@ -102,11 +100,28 @@ class Training:
 
                 global_step += 1
 
+            # writing
+            total_reward_per_agent = {key: 0 for key in current_episode_rewards[0]}
+            for record in current_episode_rewards:
+                for agent, reward in record.items():
+                    total_reward_per_agent[agent] += reward
+
+            print(f'Episode {episode} total rewards: {total_reward_per_agent}')
+
+            for agent, total_reward in total_reward_per_agent.items():
+                self.writer.add_scalar(f"episodic_rewards/{agent}/episodic_reward", total_reward)
+
         self.save_networks()
+        self.writer.close()
 
     def save_networks(self):
+        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        save_dir = f'./saved_networks/{timestamp}/adversarial_dqn/'
+        
+        os.makedirs(save_dir, exist_ok=True)
+        
         for agent in self.agent_networks:
-            torch.save(agent, f'./saved_networks/{agent.agent_id}_adversarial_ppo.pt')
+            torch.save(agent, f'{save_dir}/{agent.agent_id}.pt')
 
 
 class QNetworkAgent(nn.Module):
