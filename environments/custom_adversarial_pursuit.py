@@ -234,6 +234,7 @@ class _parallel_env(magent_parallel_env, EzPickle):
             np.maximum(reward_vals, 0).sum(),
         ]
         names = ["predator", "prey"]
+        self.names = names
         super().__init__(
             env,
             handles,

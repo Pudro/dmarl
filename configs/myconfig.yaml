@@ -1,0 +1,71 @@
+env:
+  env_id: "custom_adversarial_pursuit"
+  log_dir: "./logs/iql/"
+  model_dir: "./models/iql/"
+  project_name: "MAgent2"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  wandb_user_name: "your_user_name"
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  test_mode: False
+  device: "cpu"
+  minimap_mode: False
+  max_cycles: 500
+  extra_features: False
+  map_size: 10
+  seed: 1
+  running_steps: 5000000  # 10M
+
+agents:
+-
+  algorithm: "IQL"  # the learning algorithms_marl
+  side_name: "predator"
+  network_type: "Dense"
+  hidden_layers: [64, 128, 128, 64]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_rate: 0.001
+  gamma: 0.95  # discount factor
+  double_q: True  # use double q learning
+
+  start_greedy: 1.0
+  end_greedy: 0.05
+  decay_step_greedy: 2500000
+  start_training: 1000  # start training after n episodes
+  train_per_step: False  # True: train model per step; False: train model per episode.
+  training_frequency: 1
+  sync_frequency: 100
+
+  use_grad_clip: False
+  grad_clip_norm: 0.5
+
+  eval_interval: 100000
+  test_episode: 5
+
+-
+  algorithm: "IQL"  # the learning algorithms_marl
+  side_name: "prey"
+  network_type: "Dense"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_rate: 0.001
+  gamma: 0.95  # discount factor
+  double_q: True  # use double q learning
+
+  start_greedy: 1.0
+  end_greedy: 0.05
+  decay_step_greedy: 2500000
+  start_training: 1000  # start training after n episodes
+  train_per_step: False  # True: train model per step; False: train model per episode.
+  training_frequency: 1
+  sync_frequency: 100
+
+  use_grad_clip: False
+  grad_clip_norm: 0.5
+
+  eval_interval: 100000
+  test_episode: 5

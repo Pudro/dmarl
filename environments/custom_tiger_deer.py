@@ -235,6 +235,7 @@ class _parallel_env(magent_parallel_env, EzPickle):
         ]
 
         names = ["deer", "tiger"]
+        self.names = names
         super().__init__(
             env,
             handles,
