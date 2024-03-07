@@ -41,6 +41,8 @@ class Runner:
         else:
             self.use_wandb = True
 
+    # TODO: create a trainer for each of the agent types (side_name)
+    # different trainers for different algorithms
     def _make_env(self, config: Namespace):
 
         return MAgentEnv(
@@ -88,4 +90,7 @@ class Runner:
             self.writer.close()
 
     def run(self):
+        raise NotImplementedError
+
+    def step(self):
         raise NotImplementedError

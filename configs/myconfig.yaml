@@ -19,8 +19,8 @@ agents:
 -
   algorithm: "IQL"  # the learning algorithms_marl
   side_name: "predator"
-  network_type: "Dense"
-  hidden_layers: [64, 128, 128, 64]
+  layer_type: "Linear"
+  hidden_layers: [64, ]
   activation: "ReLU"
 
   buffer_size: 20000
@@ -46,7 +46,7 @@ agents:
 -
   algorithm: "IQL"  # the learning algorithms_marl
   side_name: "prey"
-  network_type: "Dense"
+  layer_type: "Linear"
   hidden_layers: [64, ]
   activation: "ReLU"
 

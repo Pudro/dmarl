@@ -5,7 +5,7 @@ wandb_user_name: "your_user_name"
 render: True
 render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
 test_mode: False
-device: "cpu"
+device: "cuda:0"
 
 agent: "MFQ"  # the learning algorithms_marl
 env_name: "MAgent2"
