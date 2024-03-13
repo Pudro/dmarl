@@ -1,3 +1,4 @@
+[[structure]]
 ## MAgent2
 - https://magent2.farama.org/
 - https://github.com/Farama-Foundation/MAgent2

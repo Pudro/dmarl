@@ -1,4 +1,5 @@
 from typing import List
+from agents.base import Base_Agent
 from environments import MAgentEnv
 from torch.utils.tensorboard.writer import SummaryWriter
 from agents import AGENT_REGISTRY
@@ -11,6 +12,10 @@ import wandb
 import tqdm
 import time
 import os
+from trainers import TRAINER_REGISTRY
+import torch
+
+from trainers.base import Base_Trainer
 
 
 class Runner:
@@ -18,9 +23,16 @@ class Runner:
         self.env = self._make_env(config)
         self.env.reset()
 
-        self.agent_networks = self._make_agents(config)
+        # self.agent_networks = self._make_agents(config)
+        self.trainers = self._make_trainers(config)
+        self.all_agent_networks = [
+            nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
+        ]
 
         self.config = config
+        # debug
+        self.run()
+        breakpoint()
         time_string = time.asctime().replace(" ", "").replace(":", "_")
 
         seed = f"seed_{config.seed}_"
@@ -55,32 +67,46 @@ class Runner:
             render_mode=config.env.render_mode,
         )
 
-    def _make_agents(self, config: Namespace) -> List:
-        # TODO: check here if the side_name in the config matches the env
-        # also check if the number of agent types is matching
-        # TODO: also decide whether to use python list to store the agents or to make a class
-        # will hold all agents insde a nn.ModuleList
+    def _make_trainers(self, config: Namespace) -> List[Base_Trainer]:
+        trainers = []
         for agent_config in config.agents:
             if agent_config.side_name not in self.env.side_names:
                 raise ValueError(
                     f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}"
                 )
 
-        agent_list = []
+            trainers.append(
+                TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env)
+            )
 
-        for agent_name in self.env.agents:
-            stripped_agent_name = agent_name.split("_")[0]
-            for agent_config in config.agents:
-                if agent_config.side_name == stripped_agent_name:
-                    agent_list.append(
-                        AGENT_REGISTRY[agent_config.algorithm](agent_config, self.env, agent_name, config.env.device)
-                    )
-                else:
-                    raise ValueError(
-                        f"Agent name: '{stripped_agent_name}' not in config"
-                    )
+        return trainers
 
-        return agent_list
+    # def _make_agents(self, config: Namespace) -> List[Base_Agent]:
+    #     # TODO: check here if the side_name in the config matches the env
+    #     # also check if the number of agent types is matching
+    #     for agent_config in config.agents:
+    #         if agent_config.side_name not in self.env.side_names:
+    #             raise ValueError(
+    #                 f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}"
+    #             )
+    #
+    #     agent_list = []
+    #
+    #     for agent_name in self.env.agents:
+    #         stripped_agent_name = agent_name.split("_")[0]
+    #
+    #         if stripped_agent_name not in (agent.side_name for agent in config.agents):
+    #             raise ValueError(f"Agent name: '{stripped_agent_name}' not in config")
+    #
+    #         for agent_config in config.agents:
+    #             if agent_config.side_name == stripped_agent_name:
+    #                 agent_list.append(
+    #                     AGENT_REGISTRY[agent_config.algorithm](
+    #                         agent_config, self.env, agent_name, config.env.device
+    #                     )
+    #                 )
+    #
+    #     return agent_list
 
     def finish(self):
         self.env.close()
@@ -90,7 +116,39 @@ class Runner:
             self.writer.close()
 
     def run(self):
-        raise NotImplementedError
+        for episode in range(1): # NOTE: debug
+            cycle = 0
+            observations, infos = self.env.reset()
+            while cycle < self.config.env.max_cycles:
+                action_futures = self.get_all_action_futures(observations)
+                actions = {
+                    agent_name: torch.jit.wait(fut) for agent_name, fut in action_futures.items()
+                }
+                next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+                # current_episode_rewards.append(rewards)
+                #
+                if not self.config.env.test_mode: # skip if test mode
+                    for network in self.all_agent_networks:
+                        real_next_observations = next_observations.copy()
+                        breakpoint()
+                        # for idx, trunc in enumerate(truncations):
+                        #     try:
+                        #         if trunc and 'final_observation' in infos['infos'][network.agent_name]:
+                        #             breakpoint()
+                        #     except:
+                        #         breakpoint()
+                print(cycle)
+                cycle += 1
 
-    def step(self):
-        raise NotImplementedError
+        # raise NotImplementedError
+
+    def get_all_action_futures(self, observations) -> dict[str, torch.Future]:
+        # return [
+        #     future for trainer in self.trainers for future in trainer.get_action_futures(observations)
+        # ]
+
+        return {
+            agent_name: future
+            for trainer in self.trainers
+            for agent_name, future in trainer.get_action_futures(observations).items()
+        }

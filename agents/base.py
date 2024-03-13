@@ -16,14 +16,13 @@ class Base_Agent(torch.nn.Module):
         agent_config: Namespace,
         env: MAgentEnv,
         agent_name: str,
-        device: Optional[Union[str, int, torch.device]],
     ) -> None:
         super().__init__()
         self.agent_config = agent_config
         self.agent_name = agent_name
         self.env = env
         self.build_network()
-        self.device = device
+        self.device = self.agent_config.device
 
     def build_network(self):
         # TODO: make this work for RNNs

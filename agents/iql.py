@@ -11,17 +11,13 @@ class IQL_Agent(Base_Agent):
         agent_config: Namespace,
         env: MAgentEnv,
         agent_name: str,
-        device: Optional[Union[str, int, torch.device]]
     ) -> None:
         self.agent_name = agent_name
         self.agent_config = agent_config
         self.env = env
-        self.device = device
+        self.device = self.agent_config.device
 
-        super().__init__(agent_config, env, agent_name, device)
+        super().__init__(agent_config, env, agent_name)
         self.target_network = copy.deepcopy(self.network)
         self.target_network.load_state_dict(self.network.state_dict())
-
-        breakpoint()
-        raise NotImplementedError
 

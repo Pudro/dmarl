@@ -1,0 +1,1 @@
+Runner - responsible for orchestrating the environments and training process, no parallel environments
