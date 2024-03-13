@@ -4,6 +4,9 @@ from argparse import Namespace
 import torch
 import random
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 class IQL_Trainer(Base_Trainer):
@@ -47,6 +50,39 @@ class IQL_Trainer(Base_Trainer):
 
         return action_futures
 
-    def update_agents(self):
+    def update_agents(self, global_step, actions, observations, next_observations, rewards, infos, terminations, writer):
         # self.epsilon = ...
-        raise NotImplementedError
+
+        for nn_agent in self.nn_agents:
+            nn_agent.rb.add(observations[nn_agent.agent_name],
+                        next_observations[nn_agent.agent_name],
+                        actions[nn_agent.agent_name],
+                        np.array(rewards[nn_agent.agent_name]),
+                        np.array(terminations[nn_agent.agent_name]),
+                        list(infos['infos'][nn_agent.agent_name]))
+
+        if global_step > self.agent_config.learning_start:
+            if global_step % self.agent_config.train_period == 0:
+                for nn_agent in self.nn_agents:
+                    data = nn_agent.rb.sample(self.agent_config.batch_size)
+                    with torch.no_grad():
+                        target_max, indices = nn_agent.target_network(data.next_observations).max(dim=1)
+                        td_target = data.rewards.flatten() + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
+                    old_val = nn_agent(data.observations).gather(1, data.actions).squeeze()
+                    loss = F.mse_loss(td_target, old_val)
+
+                    if global_step % 1 == 0:
+                        writer.add_scalar(f"losses/{nn_agent.agent_name}/td_loss", loss, global_step)
+                        writer.add_scalar(f"q_values/{nn_agent.agent_name}/q_values", old_val.mean().item(), global_step)
+
+                    # optimize the model
+                    nn_agent.optimizer.zero_grad()
+                    loss.backward()
+                    nn_agent.optimizer.step()
+
+                    # update target network
+                    if global_step % self.agent_config.target_network_train_period == 0:
+                        for target_network_param, q_network_param in zip(nn_agent.target_network.parameters(), nn_agent.parameters()):
+                            target_network_param.data.copy_(
+                                self.agent_config.tau * q_network_param.data + (1.0 - self.agent_config.tau) * target_network_param.data
+                            )

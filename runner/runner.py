@@ -30,28 +30,29 @@ class Runner:
         ]
 
         self.config = config
-        # debug
-        self.run()
-        breakpoint()
+
         time_string = time.asctime().replace(" ", "").replace(":", "_")
 
-        seed = f"seed_{config.seed}_"
-        config.model_dir_load = config.model_dir
-        config.model_dir_save = os.path.join(
-            os.getcwd(), config.model_dir, seed + time_string
+        seed = f"seed_{config.env.seed}_"
+        config.env.model_dir_load = config.env.model_dir
+        config.env.model_dir_save = os.path.join(
+            os.getcwd(), config.env.model_dir, seed + time_string
         )
 
-        if (not os.path.exists(config.model_dir_save)) and (not config.test_mode):
-            os.makedirs(config.model_dir_save)
+        if (not os.path.exists(config.env.model_dir_save)) and (not config.env.test_mode):
+            os.makedirs(config.env.model_dir_save)
 
-        if config.logger == "tensorboard":
-            log_dir = os.path.join(os.getcwd(), config.log_dir, seed + time_string)
+        if config.env.logger == "tensorboard":
+            log_dir = os.path.join(os.getcwd(), config.env.log_dir, seed + time_string)
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             self.writer = SummaryWriter(log_dir)
             self.use_wandb = False
         else:
             self.use_wandb = True
+            raise NotImplementedError('Wandb logging not implemented')
+
+        self.run()
 
     # TODO: create a trainer for each of the agent types (side_name)
     # different trainers for different algorithms
@@ -116,7 +117,8 @@ class Runner:
             self.writer.close()
 
     def run(self):
-        for episode in range(1): # NOTE: debug
+        global_step = 0
+        while global_step < self.config.env.running_steps:
             cycle = 0
             observations, infos = self.env.reset()
             while cycle < self.config.env.max_cycles:
@@ -126,19 +128,25 @@ class Runner:
                 }
                 next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
                 # current_episode_rewards.append(rewards)
-                #
+
                 if not self.config.env.test_mode: # skip if test mode
-                    for network in self.all_agent_networks:
-                        real_next_observations = next_observations.copy()
-                        breakpoint()
-                        # for idx, trunc in enumerate(truncations):
-                        #     try:
-                        #         if trunc and 'final_observation' in infos['infos'][network.agent_name]:
-                        #             breakpoint()
-                        #     except:
-                        #         breakpoint()
-                print(cycle)
+                        # NOTE: we do not check if the episode has ended
+                        # Magent2 does not provide that in the infos
+                        # 1. check if there are any alive agents
+                        # 2. decide what should happen when all agents die before the episode ends
+
+                        # TODO: this should be handeled by the trainer
+
+                    for trainer in self.trainers:
+                        # NOTE: might change so that futures are emited instead of handled inisde
+                        trainer.update_agents(global_step, actions, observations, next_observations, rewards, infos, terminations, self.writer)
+
+
+                observations = next_observations
+
+                print(global_step)
                 cycle += 1
+                global_step += 1
 
         # raise NotImplementedError
 
