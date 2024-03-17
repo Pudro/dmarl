@@ -1,11 +1,12 @@
 env:
   env_id: "custom_battle"
-  log_dir: "./logs/iql_battle/"
-  model_dir: "./models/iql_battle/"
+  log_dir: "./logs/iql_test_battle/"
+  model_dir_load: "./models/iql_test_battle/"
+  model_dir_save: "./models/iql_test_battle/"
   project_name: "MAgent2"
   logger: "tensorboard"  # Choices: tensorboard, wandb.
   wandb_user_name: "your_user_name"
-  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  render_mode: 'human' # Choices: 'human', 'rgb_array'.
   test_mode: False
   device: "cpu"
   minimap_mode: False
