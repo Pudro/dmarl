@@ -1,4 +1,6 @@
 from typing import List
+
+from supersuit import black_death_v3
 from agents.base import Base_Agent
 from environments import MAgentEnv
 from torch.utils.tensorboard.writer import SummaryWriter
@@ -12,6 +14,7 @@ import wandb
 import tqdm
 import time
 import os
+import shutil
 from trainers import TRAINER_REGISTRY
 import torch
 
@@ -32,30 +35,50 @@ class Runner:
         self.config = config
 
         time_string = time.asctime().replace(" ", "").replace(":", "_")
-
-        seed = f"seed_{config.env.seed}_"
-        config.env.model_dir_load = config.env.model_dir
-        config.env.model_dir_save = os.path.join(
-            os.getcwd(), config.env.model_dir, seed + time_string
+        curr = time.localtime()
+        time_string = (
+            str(curr.tm_year)
+            + "-"
+            + str(curr.tm_mon)
+            + "-"
+            + str(curr.tm_mday)
+            + "_"
+            + str(curr.tm_hour)
+            + ":"
+            + str(curr.tm_min)
+            + ":"
+            + str(curr.tm_sec)
         )
 
-        if (not os.path.exists(config.env.model_dir_save)) and (not config.env.test_mode):
-            os.makedirs(config.env.model_dir_save)
+        self.config.env.model_dir_save = os.path.join(
+            os.getcwd(), self.config.env.model_dir_save, time_string
+        )
 
-        if config.env.logger == "tensorboard":
-            log_dir = os.path.join(os.getcwd(), config.env.log_dir, seed + time_string)
+        if (not os.path.exists(self.config.env.model_dir_save)) and (
+            not self.config.env.test_mode
+        ):
+            os.makedirs(self.config.env.model_dir_save)
+
+        # TODO: save config file in the logger
+        if self.config.env.logger == "tensorboard":
+            log_dir = os.path.join(
+                os.getcwd(), self.config.env.log_dir, time_string
+            )
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             self.writer = SummaryWriter(log_dir)
+            shutil.copy2(config.env.config_file, log_dir)
+            with open(config.env.config_file, "r") as f:
+                text = f.read()
+                self.writer.add_text("config", text)
             self.use_wandb = False
         else:
             self.use_wandb = True
-            raise NotImplementedError('Wandb logging not implemented')
+            # implement wandb logging
+            raise NotImplementedError("Wandb logging not implemented")
 
         self.run()
 
-    # TODO: create a trainer for each of the agent types (side_name)
-    # different trainers for different algorithms
     def _make_env(self, config: Namespace):
 
         return MAgentEnv(
@@ -82,33 +105,6 @@ class Runner:
 
         return trainers
 
-    # def _make_agents(self, config: Namespace) -> List[Base_Agent]:
-    #     # TODO: check here if the side_name in the config matches the env
-    #     # also check if the number of agent types is matching
-    #     for agent_config in config.agents:
-    #         if agent_config.side_name not in self.env.side_names:
-    #             raise ValueError(
-    #                 f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}"
-    #             )
-    #
-    #     agent_list = []
-    #
-    #     for agent_name in self.env.agents:
-    #         stripped_agent_name = agent_name.split("_")[0]
-    #
-    #         if stripped_agent_name not in (agent.side_name for agent in config.agents):
-    #             raise ValueError(f"Agent name: '{stripped_agent_name}' not in config")
-    #
-    #         for agent_config in config.agents:
-    #             if agent_config.side_name == stripped_agent_name:
-    #                 agent_list.append(
-    #                     AGENT_REGISTRY[agent_config.algorithm](
-    #                         agent_config, self.env, agent_name, config.env.device
-    #                     )
-    #                 )
-    #
-    #     return agent_list
-
     def finish(self):
         self.env.close()
         if self.use_wandb:
@@ -116,44 +112,58 @@ class Runner:
         else:
             self.writer.close()
 
+        for nn_agent in self.all_agent_networks:
+            torch.save(
+                nn_agent.state_dict(),
+                self.config.env.model_dir_save + f"/{nn_agent.agent_name}",
+            )
+
     def run(self):
         global_step = 0
         while global_step < self.config.env.running_steps:
             cycle = 0
             observations, infos = self.env.reset()
-            while cycle < self.config.env.max_cycles:
+            # while cycle < self.config.env.max_cycles:
+            while self.env._parallel_env.agents:  # when episode ends, the list is empty
                 action_futures = self.get_all_action_futures(observations)
                 actions = {
-                    agent_name: torch.jit.wait(fut) for agent_name, fut in action_futures.items()
+                    agent_name: torch.jit.wait(fut)
+                    for agent_name, fut in action_futures.items()
                 }
-                next_observations, rewards, terminations, truncations, infos = self.env.step(actions)
+                (
+                    next_observations,
+                    rewards,
+                    terminations,
+                    truncations,
+                    infos,
+                ) = self.env.step(actions)
                 # current_episode_rewards.append(rewards)
 
-                if not self.config.env.test_mode: # skip if test mode
-                        # NOTE: we do not check if the episode has ended
-                        # Magent2 does not provide that in the infos
-                        # 1. check if there are any alive agents
-                        # 2. decide what should happen when all agents die before the episode ends
-
-                        # TODO: this should be handeled by the trainer
+                if not self.config.env.test_mode:  # skip if test mode
 
                     for trainer in self.trainers:
                         # NOTE: might change so that futures are emited instead of handled inisde
-                        trainer.update_agents(global_step, actions, observations, next_observations, rewards, infos, terminations, self.writer)
-
+                        trainer.update_agents(
+                            global_step,
+                            actions,
+                            observations,
+                            next_observations,
+                            rewards,
+                            infos,
+                            terminations,
+                            self.writer,
+                        )
 
                 observations = next_observations
 
-                print(global_step)
+                print(f"global_step: {global_step}")
+                print(f"cycle: {cycle}")
                 cycle += 1
                 global_step += 1
 
-        # raise NotImplementedError
+        self.finish()
 
     def get_all_action_futures(self, observations) -> dict[str, torch.Future]:
-        # return [
-        #     future for trainer in self.trainers for future in trainer.get_action_futures(observations)
-        # ]
 
         return {
             agent_name: future
