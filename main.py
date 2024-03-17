@@ -10,6 +10,7 @@ def parse_args():
 
     with open(args.config, "r") as f:
         config = yaml.safe_load(f)
+        config['env']['config_file'] = f.name
         _validate_config(config)
         # copy env config to each egent
         for agent in config["agents"]:
