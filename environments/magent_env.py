@@ -9,12 +9,10 @@ class MAgentEnv(ParallelEnv):
     def __init__(self, env_id: str, seed: int, **kwargs) -> None:
         scenario = importlib.import_module("environments." + env_id)
 
-        self.env = black_death_v3(scenario.env(**kwargs)).unwrapped
+        self.env = scenario.env(**kwargs).unwrapped
 
         self.scenario_name = env_id
-        self.n_handles = len(self.env.handles)
         self.side_names = self.env.names
-        self.env.reset(seed)
 
         self.state_space = self.env.state_space
         self.observation_spaces = {}
@@ -33,6 +31,7 @@ class MAgentEnv(ParallelEnv):
             )
         self.action_spaces = {k: self.env.action_spaces[k] for k in self.env.agents}
         self.agents = self.env.agents
+        self._parallel_env = self.env
         self.n_agents_all = len(self.agents)
 
         self.handles = self.env.handles
@@ -43,6 +42,10 @@ class MAgentEnv(ParallelEnv):
         self.metadata = self.env.metadata
         self.max_cycles = self.env.max_cycles
         self.individual_episode_reward = {k: 0.0 for k in self.agents}
+
+        # wrap in black death after initialization
+        self.env = black_death_v3(self.env)
+        self.env.reset(seed)
 
     def reset(self, seed=None, option=None):
         observations, infos = self.env.reset(seed, option)
