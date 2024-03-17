@@ -29,7 +29,17 @@ class Base_Trainer:
 
         raise NotImplementedError
 
-    def update_agents(self, global_step, actions, observations, next_observations, rewards, infos, terminations, writer):
+    def update_agents(
+        self,
+        global_step,
+        actions,
+        observations,
+        next_observations,
+        rewards,
+        infos,
+        terminations,
+        writer,
+    ):
         raise NotImplementedError
 
     def _make_agents(self):
