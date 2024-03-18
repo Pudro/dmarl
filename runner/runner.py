@@ -11,7 +11,7 @@ from argparse import Namespace
 import numpy as np
 import socket
 import wandb
-import tqdm
+from tqdm import tqdm
 import time
 import os
 import shutil
@@ -59,7 +59,6 @@ class Runner:
         ):
             os.makedirs(self.config.env.model_dir_save)
 
-        # TODO: save config file in the logger
         if self.config.env.logger == "tensorboard":
             log_dir = os.path.join(
                 os.getcwd(), self.config.env.log_dir, time_string
@@ -76,6 +75,8 @@ class Runner:
             self.use_wandb = True
             # implement wandb logging
             raise NotImplementedError("Wandb logging not implemented")
+
+        self.frame_list = []
 
         self.run()
 
@@ -120,8 +121,13 @@ class Runner:
 
     def run(self):
         global_step = 0
+        episode = 0
+        global_bar = tqdm(total=self.config.env.running_steps, desc='Global step')
+
+
         while global_step < self.config.env.running_steps:
             cycle = 0
+            cycle_bar = tqdm(total=self.config.env.max_cycles, desc='Current episode')
             observations, infos = self.env.reset()
             # while cycle < self.config.env.max_cycles:
             while self.env._parallel_env.agents:  # when episode ends, the list is empty
@@ -156,11 +162,19 @@ class Runner:
 
                 observations = next_observations
 
-                print(f"global_step: {global_step}")
-                print(f"cycle: {cycle}")
+                if episode % self.config.env.render_episode_period == 0:
+                    self.add_frame()
+
+                global_bar.update()
+                cycle_bar.update()
                 cycle += 1
                 global_step += 1
 
+            self.save_video(global_step)
+            cycle_bar.close()
+            episode += 1
+
+        global_bar.close()
         self.finish()
 
     def get_all_action_futures(self, observations) -> dict[str, torch.Future]:
@@ -170,3 +184,14 @@ class Runner:
             for trainer in self.trainers
             for agent_name, future in trainer.get_action_futures(observations).items()
         }
+
+    def save_video(self, global_step):
+        if self.frame_list:
+            vid_tensor = torch.stack(self.frame_list, dim=0).unsqueeze(0)
+            self.writer.add_video(tag="render", vid_tensor=vid_tensor, global_step=global_step, fps=24)
+            self.frame_list = []
+
+    def add_frame(self):
+        frame = torch.tensor(self.env.render()).permute(2,0,1)
+        self.frame_list.append(frame)
+
