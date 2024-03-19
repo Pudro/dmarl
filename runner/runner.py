@@ -26,7 +26,6 @@ class Runner:
         self.env = self._make_env(config)
         self.env.reset()
 
-
         self.config = config
 
         time_string = time.asctime().replace(" ", "").replace(":", "_")
@@ -45,17 +44,8 @@ class Runner:
             + str(curr.tm_sec)
         )
 
-        self.config.env.model_dir_save = os.path.join(
-            os.getcwd(), self.config.env.model_dir_save, time_string
-        )
-
         for agent_config in self.config.agents:
-            agent_config.model_dir_save = self.config.env.model_dir_save
-
-        if (not os.path.exists(self.config.env.model_dir_save)) and (
-            not self.config.env.test_mode
-        ):
-            os.makedirs(self.config.env.model_dir_save)
+            agent_config.model_dir_save = os.path.join(os.getcwd(), agent_config.model_dir_save, time_string)
 
         if self.config.env.logger == "tensorboard":
             log_dir = os.path.join(
@@ -71,7 +61,7 @@ class Runner:
             self.use_wandb = False
         else:
             self.use_wandb = True
-            # implement wandb logging
+            # TODO: implement wandb logging
             raise NotImplementedError("Wandb logging not implemented")
 
         self.frame_list = []
@@ -82,6 +72,7 @@ class Runner:
             nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
         ]
 
+        breakpoint()
         self.run()
 
     def _make_env(self, config: Namespace):
@@ -118,8 +109,8 @@ class Runner:
             self.writer.close()
 
         # TODO: this should happen during training also
-        for nn_agent in self.all_agent_networks:
-            nn_agent.save()
+        for trainer in self.trainers:
+            trainer.save_agents()
 
     def run(self):
         global_step = 0

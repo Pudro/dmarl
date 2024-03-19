@@ -64,9 +64,6 @@ class Base_Agent(torch.nn.Module):
     def forward(self, x):
         return self.network(x)
 
-    def save(self):
-        raise NotImplementedError
-
     def _get_layer_type(self):
 
         NNModule = importlib.import_module("torch.nn")

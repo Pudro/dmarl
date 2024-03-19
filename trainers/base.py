@@ -42,6 +42,12 @@ class Base_Trainer:
     ):
         raise NotImplementedError
 
+    def save_agents(self):
+        raise NotImplementedError
+
+    def load_agents(self):
+        raise NotImplementedError
+
     def _make_agents(self):
         agent_list = []
 

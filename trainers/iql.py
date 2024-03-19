@@ -2,6 +2,7 @@ from supersuit.multiagent_wrappers import black_death_v3
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
+import os
 import torch
 import random
 import numpy as np
@@ -16,6 +17,9 @@ class IQL_Trainer(Base_Trainer):
         self.env = env
         self.epsilon = self.agent_config.start_greedy
         super().__init__(agent_config, env)
+
+        if self.agent_config.model_dir_load:
+            self.load_agents()
 
     def get_action_futures(self, observations) -> dict[str, torch.Future]:
         action_futures = {}
@@ -72,19 +76,13 @@ class IQL_Trainer(Base_Trainer):
                 ).max(dim=1)
                 td_target = (
                     data.rewards.flatten()
-                    + self.agent_config.gamma
-                    * target_max
-                    * (1 - data.dones.flatten())
+                    + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
                 )
-            old_val = (
-                nn_agent(data.observations).gather(1, data.actions).squeeze()
-            )
+            old_val = nn_agent(data.observations).gather(1, data.actions).squeeze()
             loss = F.mse_loss(td_target, old_val)
 
             if global_step % 1 == 0:
-                writer.add_scalar(
-                    f"td_loss/{nn_agent.agent_name}", loss, global_step
-                )
+                writer.add_scalar(f"td_loss/{nn_agent.agent_name}", loss, global_step)
                 writer.add_scalar(
                     f"q_values/{nn_agent.agent_name}",
                     old_val.mean().item(),
@@ -108,23 +106,23 @@ class IQL_Trainer(Base_Trainer):
                 ):
                     target_network_param.data.copy_(
                         self.agent_config.tau * q_network_param.data
-                        + (1.0 - self.agent_config.tau)
-                        * target_network_param.data
+                        + (1.0 - self.agent_config.tau) * target_network_param.data
                     )
 
         rb_futures = []
         for nn_agent in self.nn_agents:
-            rb_futures.append(torch.jit.fork(
-                nn_agent.rb.add,
-                observations[nn_agent.agent_name],
-                next_observations[nn_agent.agent_name],
-                actions[nn_agent.agent_name],
-                np.array(rewards[nn_agent.agent_name]),
-                np.array(terminations[nn_agent.agent_name]),
-                list(infos["infos"][nn_agent.agent_name]),
-            ))
+            rb_futures.append(
+                torch.jit.fork(
+                    nn_agent.rb.add,
+                    observations[nn_agent.agent_name],
+                    next_observations[nn_agent.agent_name],
+                    actions[nn_agent.agent_name],
+                    np.array(rewards[nn_agent.agent_name]),
+                    np.array(terminations[nn_agent.agent_name]),
+                    list(infos["infos"][nn_agent.agent_name]),
+                )
+            )
 
-        
         for fut in rb_futures:
             torch.jit.wait(fut)
 
@@ -132,12 +130,56 @@ class IQL_Trainer(Base_Trainer):
         if global_step > self.agent_config.learning_start:
             if global_step % self.agent_config.train_period == 0:
                 for nn_agent in self.nn_agents:
-                    update_futures.append(
-                        torch.jit.fork(_update_iqn)
-                    )
+                    update_futures.append(torch.jit.fork(_update_iqn))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
 
         # self.epsilon = ...
         # TODO: update learning rates etc
+
+    def save_agents(self):
+
+        save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
+
+        if (not os.path.exists(save_path)) and (not self.agent_config.test_mode):
+            os.makedirs(save_path)
+
+        for nn_agent in self.nn_agents:
+            torch.save(
+                {
+                    "agent_config": nn_agent.agent_config,
+                    "agent_name": nn_agent.agent_name,
+                    "network_state_dict": nn_agent.network.state_dict(),
+                    "target_network_state_dict": nn_agent.target_network.state_dict(),
+                    "optimizer_state_dict": nn_agent.optimizer.state_dict(),
+                },
+                save_path + f"/{nn_agent.agent_name}.tar",
+            )
+
+    def load_agents(self):
+        model_files = sorted(
+            os.listdir(self.agent_config.model_dir_load),
+            key=lambda x: int(x.split("_")[1].split(".")[0]),
+        )
+        if len(model_files) < len(self.nn_agents):
+            raise Exception(
+                f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"
+            )
+
+        for nn_agent, file_name in zip(self.nn_agents, model_files):
+            model_path = self.agent_config.model_dir_load + f"/{file_name}"
+            model_tar = torch.load(model_path, map_location=self.agent_config.device)
+            nn_agent.network.load_state_dict(model_tar["network_state_dict"])
+            if not self.agent_config.load_policy_only:
+                print("loading target net")
+                nn_agent.target_network.load_state_dict(
+                    model_tar["target_network_state_dict"]
+                )
+
+            if not self.agent_config.reset_optimizer:
+                print("loading optimizer")
+                nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
+
+            nn_agent.to(self.agent_config.device)
+
