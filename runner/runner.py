@@ -26,11 +26,6 @@ class Runner:
         self.env = self._make_env(config)
         self.env.reset()
 
-        # self.agent_networks = self._make_agents(config)
-        self.trainers = self._make_trainers(config)
-        self.all_agent_networks = [
-            nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
-        ]
 
         self.config = config
 
@@ -53,6 +48,9 @@ class Runner:
         self.config.env.model_dir_save = os.path.join(
             os.getcwd(), self.config.env.model_dir_save, time_string
         )
+
+        for agent_config in self.config.agents:
+            agent_config.model_dir_save = self.config.env.model_dir_save
 
         if (not os.path.exists(self.config.env.model_dir_save)) and (
             not self.config.env.test_mode
@@ -77,6 +75,12 @@ class Runner:
             raise NotImplementedError("Wandb logging not implemented")
 
         self.frame_list = []
+
+
+        self.trainers = self._make_trainers(self.config)
+        self.all_agent_networks = [
+            nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
+        ]
 
         self.run()
 
@@ -113,11 +117,9 @@ class Runner:
         else:
             self.writer.close()
 
+        # TODO: this should happen during training also
         for nn_agent in self.all_agent_networks:
-            torch.save(
-                nn_agent.state_dict(),
-                self.config.env.model_dir_save + f"/{nn_agent.agent_name}",
-            )
+            nn_agent.save()
 
     def run(self):
         global_step = 0

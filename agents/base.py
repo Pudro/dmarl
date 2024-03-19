@@ -48,7 +48,6 @@ class Base_Agent(torch.nn.Module):
         layers.append(Layer_Type(hidden_dims[-1], output_dim, device=self.device))
         self.network = nn.Sequential(*layers)
 
-        self.to(self.device)
         # TODO: consider getting optimizer from config
         self.optimizer = optim.Adam(self.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
 
@@ -60,8 +59,13 @@ class Base_Agent(torch.nn.Module):
             handle_timeout_termination=False,
         )
 
+        self.to(self.device)
+
     def forward(self, x):
         return self.network(x)
+
+    def save(self):
+        raise NotImplementedError
 
     def _get_layer_type(self):
 
