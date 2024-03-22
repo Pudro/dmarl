@@ -71,9 +71,7 @@ class IQL_Trainer(Base_Trainer):
         def _update_iqn():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
             with torch.no_grad():
-                target_max, indices = nn_agent.target_network(
-                    data.next_observations
-                ).max(dim=1)
+                target_max, indices = nn_agent.target_network(data.next_observations).max(dim=1)
                 td_target = (
                     data.rewards.flatten()
                     + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
@@ -93,6 +91,11 @@ class IQL_Trainer(Base_Trainer):
                     rewards[nn_agent.agent_name],
                     global_step,
                 )
+                writer.add_scalar(
+                    f"epsilon_greedy/{nn_agent.agent_name}",
+                    self.epsilon,
+                    global_step,
+                )
 
             # optimize the model
             nn_agent.optimizer.zero_grad()
@@ -109,6 +112,9 @@ class IQL_Trainer(Base_Trainer):
                         + (1.0 - self.agent_config.tau) * target_network_param.data
                     )
 
+        # TODO: currently data is added to the replay buffer on each global_step
+        # maybe add the whole episode to replay buffer each episode
+        # and add episodic returns to each reward
         rb_futures = []
         for nn_agent in self.nn_agents:
             rb_futures.append(
@@ -135,8 +141,10 @@ class IQL_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        # self.epsilon = ...
-        # TODO: update learning rates etc
+        # TODO: should optimizer.lr be updated?
+        self.epsilon = (1 - (global_step / self.agent_config.running_steps)) * self.agent_config.start_greedy
+        self.epsilon = 0 if self.epsilon < 0 else self.epsilon
+    
 
     def save_agents(self):
 
@@ -172,14 +180,11 @@ class IQL_Trainer(Base_Trainer):
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
             nn_agent.network.load_state_dict(model_tar["network_state_dict"])
             if not self.agent_config.load_policy_only:
-                print("loading target net")
                 nn_agent.target_network.load_state_dict(
                     model_tar["target_network_state_dict"]
                 )
 
             if not self.agent_config.reset_optimizer:
-                print("loading optimizer")
                 nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
 
             nn_agent.to(self.agent_config.device)
-

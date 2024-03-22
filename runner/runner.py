@@ -71,8 +71,8 @@ class Runner:
         self.all_agent_networks = [
             nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
         ]
+        self.episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
 
-        breakpoint()
         self.run()
 
     def _make_env(self, config: Namespace):
@@ -120,7 +120,7 @@ class Runner:
 
         while global_step < self.config.env.running_steps:
             cycle = 0
-            cycle_bar = tqdm(total=self.config.env.max_cycles, desc='Current episode')
+            cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}')
             observations, infos = self.env.reset()
             # while cycle < self.config.env.max_cycles:
             while self.env._parallel_env.agents:  # when episode ends, the list is empty
@@ -137,6 +137,8 @@ class Runner:
                     infos,
                 ) = self.env.step(actions)
                 # current_episode_rewards.append(rewards)
+                # TODO: this should be handled by the writer
+                self.add_rewards(rewards)
 
                 if not self.config.env.test_mode:  # skip if test mode
 
@@ -164,6 +166,7 @@ class Runner:
                 global_step += 1
 
             self.save_video(global_step)
+            self.save_episodic_returns(global_step)
             cycle_bar.close()
             episode += 1
 
@@ -181,10 +184,25 @@ class Runner:
     def save_video(self, global_step):
         if self.frame_list:
             vid_tensor = torch.stack(self.frame_list, dim=0).unsqueeze(0)
-            self.writer.add_video(tag="render", vid_tensor=vid_tensor, global_step=global_step, fps=24)
+            self.writer.add_video(tag="render", vid_tensor=vid_tensor, global_step=global_step, fps=60)
             self.frame_list = []
 
     def add_frame(self):
         frame = torch.tensor(self.env.render()).permute(2,0,1)
         self.frame_list.append(frame)
 
+    def add_rewards(self, rewards):
+        for name, reward in rewards.items():
+            self.episodic_returns[name] += reward
+
+    def save_episodic_returns(self, global_step):
+
+        for nn_agent in self.all_agent_networks:
+            self.writer.add_scalar(
+                f"episodic_returns/{nn_agent.agent_name}",
+                self.episodic_returns[nn_agent.agent_name],
+                global_step,
+            )
+
+        for name in self.episodic_returns.keys():
+            self.episodic_returns[name] = 0
