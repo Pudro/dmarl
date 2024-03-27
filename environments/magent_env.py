@@ -56,6 +56,7 @@ class MAgentEnv(ParallelEnv):
         return observations, infos
 
     def step(self, actions):
+        actions = {agent_name: action_tensor.cpu() for agent_name, action_tensor in actions.items()}
         observations, rewards, terminations, truncations, infos = self.env.step(actions)
         for k, v in rewards.items():
             self.individual_episode_reward[k] += v
