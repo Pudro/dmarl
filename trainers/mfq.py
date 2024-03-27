@@ -136,7 +136,7 @@ class MFQ_Trainer(Base_Trainer):
                     nn_agent.rb.add,
                     observations[nn_agent.agent_name],
                     next_observations[nn_agent.agent_name],
-                    actions[nn_agent.agent_name],
+                    actions[nn_agent.agent_name].cpu(),
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
