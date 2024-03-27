@@ -21,7 +21,7 @@ class IQL_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-    def get_action_futures(self, observations) -> dict[str, torch.Future]:
+    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
@@ -44,16 +44,6 @@ class IQL_Trainer(Base_Trainer):
                 )
 
             action_futures[nn_agent.agent_name] = action_fut
-
-        # return {
-        #     nn_agent.agent_name: torch.jit.fork(
-        #         nn_agent,
-        #         torch.Tensor(observations[nn_agent.agent_name]).to(
-        #             self.agent_config.device
-        #         ),
-        #     )
-        #     for nn_agent in self.nn_agents
-        # }
 
         return action_futures
 
@@ -125,7 +115,7 @@ class IQL_Trainer(Base_Trainer):
                     actions[nn_agent.agent_name],
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
-                    list(infos["infos"][nn_agent.agent_name]),
+                    infos["infos"][nn_agent.agent_name],
                 )
             )
 

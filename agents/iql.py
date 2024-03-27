@@ -20,6 +20,7 @@ class IQL_Agent(Base_Agent):
         self.device = self.agent_config.device
 
         super().__init__(agent_config, env, agent_name)
+
         self.target_network = copy.deepcopy(self.network)
         self.target_network.load_state_dict(self.network.state_dict())
         self.target_network.to(self.device)

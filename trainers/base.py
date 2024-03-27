@@ -16,7 +16,7 @@ class Base_Trainer:
     def step(self):
         raise NotImplementedError
 
-    def get_action_futures(self, observations) -> dict[str, torch.Future]:
+    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
         # return [
         #     torch.jit.fork(
         #         nn_agent,
