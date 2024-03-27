@@ -115,7 +115,7 @@ class IQL_Trainer(Base_Trainer):
                     actions[nn_agent.agent_name],
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
-                    infos["infos"][nn_agent.agent_name],
+                    infos[nn_agent.agent_name],
                 )
             )
 
