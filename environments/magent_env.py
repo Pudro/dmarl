@@ -51,23 +51,17 @@ class MAgentEnv(ParallelEnv):
         observations, infos = self.env.reset(seed, option)
         for agent_key in self.agents:
             self.individual_episode_reward[agent_key] = 0.0
+            infos[agent_key]['individual_episode_reward'] = self.individual_episode_reward[agent_key]
             observations[agent_key] = observations[agent_key].reshape([-1])
-        reset_info = {
-            "infos": {},
-            "individual_episode_rewards": self.individual_episode_reward,
-        }
-        return observations, reset_info
+        return observations, infos
 
     def step(self, actions):
         observations, rewards, terminations, truncations, infos = self.env.step(actions)
         for k, v in rewards.items():
             self.individual_episode_reward[k] += v
+            infos[k]['individual_episode_reward'] = self.individual_episode_reward[k]
             observations[k] = observations[k].reshape([-1])
-        step_info = {
-            "infos": infos,
-            "individual_episode_rewards": self.individual_episode_reward,
-        }
-        return observations, rewards, terminations, truncations, step_info
+        return observations, rewards, terminations, truncations, infos
 
     def render(self):
         return self.env.render()
