@@ -124,7 +124,7 @@ class Runner:
             observations, infos = self.env.reset()
             # while cycle < self.config.env.max_cycles:
             while self.env._parallel_env.agents:  # when episode ends, the list is empty
-                action_futures = self.get_all_action_futures(observations)
+                action_futures = self.get_all_action_futures(observations, infos)
                 actions = {
                     agent_name: torch.jit.wait(fut)
                     for agent_name, fut in action_futures.items()
@@ -173,12 +173,12 @@ class Runner:
         global_bar.close()
         self.finish()
 
-    def get_all_action_futures(self, observations) -> dict[str, torch.Future]:
+    def get_all_action_futures(self, observations, infos) -> dict[str, torch.Future]:
 
         return {
             agent_name: future
             for trainer in self.trainers
-            for agent_name, future in trainer.get_action_futures(observations).items()
+            for agent_name, future in trainer.get_action_futures(observations, infos).items()
         }
 
     def save_video(self, global_step):
@@ -201,6 +201,16 @@ class Runner:
             self.writer.add_scalar(
                 f"episodic_returns/{nn_agent.agent_name}",
                 self.episodic_returns[nn_agent.agent_name],
+                global_step,
+            )
+
+        for agent_config in self.config.agents:
+            side_average_returns = np.mean([
+                r for a, r in self.episodic_returns.items() if agent_config.side_name in a
+            ])
+            self.writer.add_scalar(
+                f"average_episodic_returns/{agent_config.side_name}",
+                side_average_returns,
                 global_step,
             )
 
