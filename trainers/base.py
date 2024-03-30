@@ -17,16 +17,9 @@ class Base_Trainer:
         raise NotImplementedError
 
     def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
-        # return [
-        #     torch.jit.fork(
-        #         nn_agent,
-        #         torch.Tensor(observations[nn_agent.agent_name]).to(
-        #             self.agent_config.device
-        #         ),
-        #     )
-        #     for nn_agent in self.nn_agents
-        # ]
+        raise NotImplementedError
 
+    def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         raise NotImplementedError
 
     def update_agents(

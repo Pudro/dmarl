@@ -11,7 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class IQL_Trainer(Base_Trainer):
+class MAPPO_Trainer(Base_Trainer):
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
@@ -20,35 +20,6 @@ class IQL_Trainer(Base_Trainer):
 
         if self.agent_config.model_dir_load:
             self.load_agents()
-
-    def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
-        action_futures = {}
-        for nn_agent in self.nn_agents:
-            if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
-            else:
-                action_fut = torch.jit.fork(
-                    torch.argmax,
-                    nn_agent(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
-                    ),
-                    # dim=0,
-                )
-
-            action_futures[nn_agent.agent_name] = action_fut
-
-        actions = {
-            agent_name: torch.jit.wait(fut)
-            for agent_name, fut in action_futures.items()
-        }
-
-        return actions
 
     def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}

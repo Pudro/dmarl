@@ -122,13 +122,8 @@ class Runner:
             cycle = 0
             cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}')
             observations, infos = self.env.reset()
-            # while cycle < self.config.env.max_cycles:
             while self.env._parallel_env.agents:  # when episode ends, the list is empty
-                action_futures = self.get_all_action_futures(observations, infos)
-                actions = {
-                    agent_name: torch.jit.wait(fut)
-                    for agent_name, fut in action_futures.items()
-                }
+                actions = self.get_all_actions(observations, infos)
                 (
                     next_observations,
                     rewards,
@@ -173,12 +168,12 @@ class Runner:
         global_bar.close()
         self.finish()
 
-    def get_all_action_futures(self, observations, infos) -> dict[str, torch.Future]:
+    def get_all_actions(self, observations, infos) -> dict[str, torch.Tensor]:
 
         return {
-            agent_name: future
+            agent_name: action
             for trainer in self.trainers
-            for agent_name, future in trainer.get_action_futures(observations, infos).items()
+            for agent_name, action in trainer.get_actions(observations, infos).items()
         }
 
     def save_video(self, global_step):
