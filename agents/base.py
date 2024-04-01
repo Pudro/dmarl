@@ -7,8 +7,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import importlib
-# from stable_baselines3.common.buffers import ReplayBuffer
-from agents.replay_buffer import ReplayBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
 
 
 class Base_Agent(torch.nn.Module):
