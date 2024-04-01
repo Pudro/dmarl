@@ -50,32 +50,6 @@ class IQL_Trainer(Base_Trainer):
 
         return actions
 
-    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
-        action_futures = {}
-        for nn_agent in self.nn_agents:
-            if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
-            else:
-                # q_values = nn_agent(torch.Tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device))
-                # action = torch.argmax(q_values, dim=0)
-                action_fut = torch.jit.fork(
-                    torch.argmax,
-                    nn_agent(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
-                    ),
-                    # dim=0,
-                )
-
-            action_futures[nn_agent.agent_name] = action_fut
-
-        return action_futures
-
     def update_agents(
         self,
         global_step,

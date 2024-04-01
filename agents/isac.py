@@ -1,13 +1,13 @@
+import torch
 from argparse import Namespace
 from typing import Optional, Union
 from environments.magent_env import MAgentEnv
 from agents.base import Base_Agent
-import torch.optim as optim
 import os
 import copy
 
 
-class IQL_Agent(Base_Agent):
+class ISAC_Agent(Base_Agent):
     def __init__(
         self,
         agent_config: Namespace,
@@ -21,9 +21,13 @@ class IQL_Agent(Base_Agent):
 
         super().__init__(agent_config, env, agent_name)
 
-        self.target_network = copy.deepcopy(self.network)
-        self.target_network.load_state_dict(self.network.state_dict())
-        self.target_network.to(self.device)
+        self.qf1 = copy.deepcopy(self.network)
+        self.qf1.load_state_dict(self.network.state_dict())
+        self.qf2 = copy.deepcopy(self.network)
+        self.qf2.load_state_dict(self.network.state_dict())
 
-        self.optimizer = optim.Adam(self.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
-        self.to(self.device)
+        self.target_qf1 = copy.deepcopy(self.qf1)
+        self.target_qf1.load_state_dict(self.qf1.state_dict())
+        self.target_qf2 = copy.deepcopy(self.qf2)
+        self.target_qf2.load_state_dict(self.qf2.state_dict())
+

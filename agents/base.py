@@ -7,7 +7,8 @@ import torch.nn.functional as F
 import torch.optim as optim
 import numpy as np
 import importlib
-from stable_baselines3.common.buffers import ReplayBuffer
+# from stable_baselines3.common.buffers import ReplayBuffer
+from agents.replay_buffer import ReplayBuffer
 
 
 class Base_Agent(torch.nn.Module):
@@ -32,20 +33,7 @@ class Base_Agent(torch.nn.Module):
         hidden_dims = self.agent_config.hidden_layers
         output_dim = self.env.action_spaces[self.agent_name].n
 
-        Layer_Type = self._get_layer_type()
-        Activation = self._get_activation_type()
-
-        layer_sizes = list(zip(hidden_dims[:-1], hidden_dims[1:]))
-        layers = [
-            Layer_Type(input_dim, hidden_dims[0], device=self.device),
-            Activation(),
-        ]
-
-        for in_size, out_size in layer_sizes:
-            layers.append(Layer_Type(in_size, out_size, device=self.device))
-            layers.append(Activation())
-
-        layers.append(Layer_Type(hidden_dims[-1], output_dim, device=self.device))
+        layers = self._get_network_layers(input_dim, hidden_dims, output_dim)
         self.network = nn.Sequential(*layers)
 
         # TODO: consider getting optimizer from config
@@ -63,6 +51,24 @@ class Base_Agent(torch.nn.Module):
 
     def forward(self, x):
         return self.network(x)
+
+    def _get_network_layers(self, input_dim, hidden_dims, output_dim) -> list[nn.Module]:
+        Layer_Type = self._get_layer_type()
+        Activation = self._get_activation_type()
+
+        layer_sizes = list(zip(hidden_dims[:-1], hidden_dims[1:]))
+        layers = [
+            Layer_Type(input_dim, hidden_dims[0], device=self.device),
+            Activation(),
+        ]
+
+        for in_size, out_size in layer_sizes:
+            layers.append(Layer_Type(in_size, out_size, device=self.device))
+            layers.append(Activation())
+
+        layers.append(Layer_Type(hidden_dims[-1], output_dim, device=self.device))
+
+        return layers
 
     def _get_layer_type(self):
 

@@ -22,24 +22,29 @@ class MFQ_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
-        def _action_future():
-            torch.argmax(
+    def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
+        # TODO: may move these functions outside
+        def _initial_action_future():
+            return torch.argmax(
+                    nn_agent.network(
+                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
+                            self.agent_config.device
+                        )
+                    )
+                    # dim=0,
+            )
+
+
+        def _full_action_future():
+            return torch.argmax(
                     nn_agent(
                         torch.tensor(observations[nn_agent.agent_name].flatten()).to(
                             self.agent_config.device
                         ),
-                        # TODO: tutaj taki problem:
-                        # ta funkcja get_action_futures jest uzywana zeby dostac akcje z obserwacji
-                        # ale zeby agent dostal akcje z obserwacji, musi znac mean_actions innych agentów
-                        # czy to aby napewno tak ma działać?
-                        torch.tensor(infos[nn_agent.agent_name]['actions_mean'].flatten()).to(
-                            self.agent_config.device
-                        ),
+                    mean_actions.to(self.agent_config.device)
                     ),
                     # dim=0,
             )
-            
 
         action_futures = {}
         for nn_agent in self.nn_agents:
@@ -50,14 +55,38 @@ class MFQ_Trainer(Base_Trainer):
                     )
                 )
             else:
-                breakpoint()
                 action_fut = torch.jit.fork(
-                    _action_future
+                    _initial_action_future
                 )
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        return action_futures
+        initial_actions = [
+            torch.jit.wait(fut)
+            for fut in action_futures.values()
+        ]
+
+        one_hot_actions = F.one_hot(torch.stack(initial_actions), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        mean_actions = torch.mean(one_hot_actions, dim=0)
+        
+        for nn_agent in self.nn_agents:
+            if random.random() < self.epsilon:
+                action_fut = torch.jit.fork(
+                    lambda: torch.tensor(
+                        self.env.action_space(nn_agent.agent_name).sample()
+                    )
+                )
+            else:
+                action_fut = torch.jit.fork(
+                    _full_action_future
+                )
+
+            action_futures[nn_agent.agent_name] = action_fut
+
+        return {
+            agent: torch.jit.wait(fut)
+            for agent, fut in action_futures.items()
+        }
 
     def get_boltzmann_policy(self, x):
         return F.softmax((x / self.temperature), dim=-1)
@@ -77,18 +106,16 @@ class MFQ_Trainer(Base_Trainer):
             data = nn_agent.rb.sample(self.agent_config.batch_size)
 
             with torch.no_grad():
-                # TODO: add mean action to this mix! (add mean actions to the buffer)
-                target_max, indices = nn_agent.target_network(data.next_observations, data.next_actions_mean).max(dim=1)
-                breakpoint()
+                target_max, indices = nn_agent.target(data.next_observations, data.mean_next_actions).max(dim=1)
                 pi = self.get_boltzmann_policy(target_max)
                 v_mf = target_max * pi
+                # something here should take the mean actions
                 td_target = (
                     data.rewards.flatten()
                     + self.agent_config.gamma * v_mf * (1 - data.dones.flatten())
                 )
-            old_val = nn_agent(data.observations, data.actions_mean).gather(1, data.actions).squeeze()
+            old_val = nn_agent(data.observations, data.mean_actions).gather(1, data.actions).squeeze()
             loss = F.mse_loss(td_target, old_val)
-            breakpoint()
 
             if global_step % 1 == 0:
                 writer.add_scalar(f"td_loss/{nn_agent.agent_name}", loss, global_step)
@@ -111,6 +138,7 @@ class MFQ_Trainer(Base_Trainer):
             # optimize the model
             nn_agent.optimizer.zero_grad()
             loss.backward()
+            # NOTE: here is the optimizer step
             nn_agent.optimizer.step()
 
             # update target network
@@ -123,14 +151,16 @@ class MFQ_Trainer(Base_Trainer):
                         + (1.0 - self.agent_config.tau) * target_network_param.data
                     )
 
-        # TODO: currently data is added to the replay buffer on each global_step
-        # maybe add the whole episode to replay buffer each episode
-        # and add episodic returns to each reward
         rb_futures = []
+
+        one_hot_actions = F.one_hot(torch.stack([*actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        mean_actions = torch.mean(one_hot_actions, dim=0)
+
+        next_actions = self.get_actions(next_observations, infos=None)
+        one_hot_next_actions = F.one_hot(torch.stack([*next_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        mean_next_actions = torch.mean(one_hot_next_actions, dim=0)
+
         for nn_agent in self.nn_agents:
-            # TODO: the infos may need some refactoring
-            infos['infos'][nn_agent.agent_name]['actions_mean'] = ...
-            infos['infos'][nn_agent.agent_name]['actions_mean_next'] = ...
             rb_futures.append(
                 torch.jit.fork(
                     nn_agent.rb.add,
@@ -140,6 +170,8 @@ class MFQ_Trainer(Base_Trainer):
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
+                    mean_actions,
+                    mean_next_actions
                 )
             )
 
