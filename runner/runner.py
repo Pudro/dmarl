@@ -135,10 +135,9 @@ class Runner:
                 # TODO: this should be handled by the writer
                 self.add_rewards(rewards)
 
-                if not self.config.env.test_mode:  # skip if test mode
-
-                    for trainer in self.trainers:
-                        # NOTE: might change so that futures are emited instead of handled inisde
+                for trainer in self.trainers:
+                    # NOTE: might change so that futures are emited instead of handled inisde
+                    if not trainer.agent_config.test_mode:
                         trainer.update_agents(
                             global_step,
                             actions,
