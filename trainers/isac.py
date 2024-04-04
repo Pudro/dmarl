@@ -21,7 +21,7 @@ class ISAC_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
+    def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         action_futures = {}
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
@@ -31,11 +31,9 @@ class ISAC_Trainer(Base_Trainer):
                     )
                 )
             else:
-                # q_values = nn_agent(torch.Tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device))
-                # action = torch.argmax(q_values, dim=0)
                 action_fut = torch.jit.fork(
                     torch.argmax,
-                    nn_agent(
+                    nn_agent.actor(
                         torch.tensor(observations[nn_agent.agent_name].flatten()).to(
                             self.agent_config.device
                         ),
@@ -45,7 +43,13 @@ class ISAC_Trainer(Base_Trainer):
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        return action_futures
+        actions = {
+            agent_name: torch.jit.wait(fut)
+            for agent_name, fut in action_futures.items()
+        }
+
+        return actions
+
 
     def update_agents(
         self,
@@ -58,24 +62,72 @@ class ISAC_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
-        def _update_iqn():
+        def _update_isac():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
+
+
+            # CRITIC TRAINING
             with torch.no_grad():
-                target_max, indices = nn_agent.target_network(data.next_observations).max(dim=1)
-                td_target = (
-                    data.rewards.flatten()
-                    + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
+                next_state_log_pi, next_state_action_probs = nn_agent.get_action_probs(data.next_observations) # TODO: give actor method?
+                qf1_next_target = nn_agent.target_qf1(data.next_observations)
+                qf2_next_target = nn_agent.target_qf2(data.next_observations)
+                # we can use the action probabilities instead of MC sampling to estimate the expectation
+                min_qf_next_target = next_state_action_probs * (
+                    torch.min(qf1_next_target, qf2_next_target) - nn_agent.agent_config.alpha * next_state_log_pi
                 )
-            old_val = nn_agent(data.observations).gather(1, data.actions).squeeze()
-            loss = F.mse_loss(td_target, old_val)
+                # adapt Q-target for discrete Q-function
+                min_qf_next_target = min_qf_next_target.sum(dim=1)
+                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * nn_agent.agent_config.gamma * (min_qf_next_target)
+
+             # use Q-values only for the taken actions
+            qf1_values = nn_agent.qf1(data.observations)
+            qf2_values = nn_agent.qf2(data.observations)
+            qf1_a_values = qf1_values.gather(1, data.actions.long()).view(-1)
+            qf2_a_values = qf2_values.gather(1, data.actions.long()).view(-1)
+            qf1_loss = F.mse_loss(qf1_a_values, next_q_value)
+            qf2_loss = F.mse_loss(qf2_a_values, next_q_value)
+            qf_loss = qf1_loss + qf2_loss
+
+            nn_agent.q_optimizer.zero_grad()
+            qf_loss.backward()
+            nn_agent.q_optimizer.step()
+
+            # ACTOR TRAINING
+            log_pi, action_probs = nn_agent.get_action_probs(data.observations)
+            with torch.no_grad():
+                qf1_values = nn_agent.qf1(data.observations)
+                qf2_values = nn_agent.qf2(data.observations)
+                min_qf_values = torch.min(qf1_values, qf2_values)
+            # no need for reparameterization, the expectation can be calculated for discrete actions
+            actor_loss = (action_probs * ((nn_agent.agent_config.alpha * log_pi) - min_qf_values)).mean()
+
+            nn_agent.actor_optimizer.zero_grad()
+            actor_loss.backward()
+            nn_agent.actor_optimizer.step()
+
+            # TODO: consider addin this in
+            # if args.autotune:
+            #     # re-use action probabilities for temperature loss
+            #     alpha_loss = (action_probs.detach() * (-log_alpha.exp() * (log_pi + target_entropy).detach())).mean()
+            #     a_optimizer.zero_grad()
+            #     alpha_loss.backward()
+            #     a_optimizer.step()
+            #     alpha = log_alpha.exp().item()
+
+            # update the target networks
+            if global_step % self.agent_config.target_network_train_period == 0:
+                for param, target_param in zip(nn_agent.qf1.parameters(), nn_agent.target_qf1.parameters()):
+                    target_param.data.copy_(self.agent_config.tau * param.data + (1 - self.agent_config.tau) * target_param.data)
+                for param, target_param in zip(nn_agent.qf2.parameters(), nn_agent.target_qf2.parameters()):
+                    target_param.data.copy_(self.agent_config.tau * param.data + (1 - self.agent_config.tau) * target_param.data)
 
             if global_step % 1 == 0:
-                writer.add_scalar(f"td_loss/{nn_agent.agent_name}", loss, global_step)
-                writer.add_scalar(
-                    f"q_values/{nn_agent.agent_name}",
-                    old_val.mean().item(),
-                    global_step,
-                )
+                writer.add_scalar(f"qf1_values/{nn_agent.agent_name}", qf1_a_values.mean().item(), global_step)
+                writer.add_scalar(f"qf2_values/{nn_agent.agent_name}", qf2_a_values.mean().item(), global_step)
+                writer.add_scalar(f"qf1_loss/{nn_agent.agent_name}", qf1_loss.item(), global_step)
+                writer.add_scalar(f"qf2_loss/{nn_agent.agent_name}", qf2_loss.item(), global_step)
+                writer.add_scalar(f"qf_loss/{nn_agent.agent_name}", qf_loss.item() / 2.0, global_step)
+                writer.add_scalar(f"actor_loss/{nn_agent.agent_name}", actor_loss.item(), global_step)
                 writer.add_scalar(
                     f"reward/{nn_agent.agent_name}",
                     rewards[nn_agent.agent_name],
@@ -87,20 +139,6 @@ class ISAC_Trainer(Base_Trainer):
                     global_step,
                 )
 
-            # optimize the model
-            nn_agent.optimizer.zero_grad()
-            loss.backward()
-            nn_agent.optimizer.step()
-
-            # update target network
-            if global_step % self.agent_config.target_network_train_period == 0:
-                for target_network_param, q_network_param in zip(
-                    nn_agent.target_network.parameters(), nn_agent.parameters()
-                ):
-                    target_network_param.data.copy_(
-                        self.agent_config.tau * q_network_param.data
-                        + (1.0 - self.agent_config.tau) * target_network_param.data
-                    )
 
         # TODO: currently data is added to the replay buffer on each global_step
         # maybe add the whole episode to replay buffer each episode
@@ -126,7 +164,7 @@ class ISAC_Trainer(Base_Trainer):
         if global_step > self.agent_config.learning_start:
             if global_step % self.agent_config.train_period == 0:
                 for nn_agent in self.nn_agents:
-                    update_futures.append(torch.jit.fork(_update_iqn))
+                    update_futures.append(torch.jit.fork(_update_isac))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -136,9 +174,12 @@ class ISAC_Trainer(Base_Trainer):
         self.epsilon = 0 if self.epsilon < 0 else self.epsilon
     
 
-    def save_agents(self):
+    # TODO: update savgin
+    def save_agents(self, checkpoint=None):
 
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
+        if checkpoint:
+            save_path = save_path + "/" + str(checkpoint)
 
         if (not os.path.exists(save_path)) and (not self.agent_config.test_mode):
             os.makedirs(save_path)
@@ -155,6 +196,7 @@ class ISAC_Trainer(Base_Trainer):
                 save_path + f"/{nn_agent.agent_name}.tar",
             )
 
+    # TODO: update lodagin
     def load_agents(self):
         model_files = sorted(
             os.listdir(self.agent_config.model_dir_load),

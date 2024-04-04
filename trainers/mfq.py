@@ -192,9 +192,12 @@ class MFQ_Trainer(Base_Trainer):
         self.epsilon = 0 if self.epsilon < 0 else self.epsilon
     
 
-    def save_agents(self):
+    # TODO: update parameters saving
+    def save_agents(self, checkpoint=None):
 
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
+        if checkpoint:
+            save_path = save_path + "/" + str(checkpoint)
 
         if (not os.path.exists(save_path)) and (not self.agent_config.test_mode):
             os.makedirs(save_path)
@@ -211,6 +214,7 @@ class MFQ_Trainer(Base_Trainer):
                 save_path + f"/{nn_agent.agent_name}.tar",
             )
 
+    # TODO: update parameter loading
     def load_agents(self):
         model_files = sorted(
             os.listdir(self.agent_config.model_dir_load),
@@ -225,6 +229,7 @@ class MFQ_Trainer(Base_Trainer):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
             nn_agent.network.load_state_dict(model_tar["network_state_dict"])
+            breakpoint()
             if not self.agent_config.load_policy_only:
                 nn_agent.target_network.load_state_dict(
                     model_tar["target_network_state_dict"]

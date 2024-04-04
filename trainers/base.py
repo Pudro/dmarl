@@ -35,7 +35,7 @@ class Base_Trainer:
     ):
         raise NotImplementedError
 
-    def save_agents(self):
+    def save_agents(self, checkpoint=None):
         raise NotImplementedError
 
     def load_agents(self):

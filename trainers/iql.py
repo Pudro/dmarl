@@ -139,9 +139,11 @@ class IQL_Trainer(Base_Trainer):
         self.epsilon = 0 if self.epsilon < 0 else self.epsilon
     
 
-    def save_agents(self):
+    def save_agents(self, checkpoint=None):
 
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
+        if checkpoint:
+            save_path = save_path + "/" + str(checkpoint)
 
         if (not os.path.exists(save_path)) and (not self.agent_config.test_mode):
             os.makedirs(save_path)

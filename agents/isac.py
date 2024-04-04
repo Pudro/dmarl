@@ -3,8 +3,11 @@ from argparse import Namespace
 from typing import Optional, Union
 from environments.magent_env import MAgentEnv
 from agents.base import Base_Agent
+from torch.distributions.categorical import Categorical
 import os
 import copy
+import torch.optim as optim
+import torch.nn.functional as F
 
 
 class ISAC_Agent(Base_Agent):
@@ -31,3 +34,19 @@ class ISAC_Agent(Base_Agent):
         self.target_qf2 = copy.deepcopy(self.qf2)
         self.target_qf2.load_state_dict(self.qf2.state_dict())
 
+        self.actor = copy.deepcopy(self.network)
+        self.actor.load_state_dict(self.network.state_dict())
+
+        del self.network
+        del self.optimizer
+
+        self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
+        self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
+
+
+    def get_action_probs(self, observations):
+        logits = self.actor(observations)
+        policy_dist = Categorical(logits=logits)
+        action_probs = policy_dist.probs
+        log_prob = F.log_softmax(logits, dim=1)
+        return log_prob, action_probs

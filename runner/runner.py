@@ -159,6 +159,11 @@ class Runner:
                 cycle += 1
                 global_step += 1
 
+                # save checkpoint
+                for trainer in self.trainers:
+                    if global_step % trainer.agent_config.model_checkpoint_period == 0:
+                        trainer.save_agents(global_step)
+
             self.save_video(global_step)
             self.save_episodic_returns(global_step)
             cycle_bar.close()
