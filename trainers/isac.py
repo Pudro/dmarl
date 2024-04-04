@@ -174,9 +174,7 @@ class ISAC_Trainer(Base_Trainer):
         self.epsilon = 0 if self.epsilon < 0 else self.epsilon
     
 
-    # TODO: update savgin
     def save_agents(self, checkpoint=None):
-
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
         if checkpoint:
             save_path = save_path + "/" + str(checkpoint)
@@ -189,14 +187,17 @@ class ISAC_Trainer(Base_Trainer):
                 {
                     "agent_config": nn_agent.agent_config,
                     "agent_name": nn_agent.agent_name,
-                    "network_state_dict": nn_agent.network.state_dict(),
-                    "target_network_state_dict": nn_agent.target_network.state_dict(),
-                    "optimizer_state_dict": nn_agent.optimizer.state_dict(),
+                    "qf1_state_dict": nn_agent.qf1.state_dict(),
+                    "target_qf1_state_dict": nn_agent.target_qf1.state_dict(),
+                    "qf2_state_dict": nn_agent.qf2.state_dict(),
+                    "target_qf2_state_dict": nn_agent.target_qf2.state_dict(),
+                    "actor_state_dict": nn_agent.actor.state_dict(),
+                    "q_optimizer_state_dict": nn_agent.q_optimizer.state_dict(),
+                    "actor_optimizer_state_dict": nn_agent.actor_optimizer.state_dict(),
                 },
                 save_path + f"/{nn_agent.agent_name}.tar",
             )
 
-    # TODO: update lodagin
     def load_agents(self):
         model_files = sorted(
             os.listdir(self.agent_config.model_dir_load),
@@ -210,13 +211,14 @@ class ISAC_Trainer(Base_Trainer):
         for nn_agent, file_name in zip(self.nn_agents, model_files):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
-            nn_agent.network.load_state_dict(model_tar["network_state_dict"])
-            if not self.agent_config.load_policy_only:
-                nn_agent.target_network.load_state_dict(
-                    model_tar["target_network_state_dict"]
-                )
+            nn_agent.qf1.load_state_dict(model_tar["qf1_state_dict"])
+            nn_agent.target_qf1.load_state_dict(model_tar["target_qf1_state_dict"])
+            nn_agent.qf2.load_state_dict(model_tar["qf2_state_dict"])
+            nn_agent.target_qf2.load_state_dict(model_tar["target_qf2_state_dict"])
+            nn_agent.actor.load_state_dict(model_tar["actor_state_dict"])
 
             if not self.agent_config.reset_optimizer:
-                nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
+                nn_agent.q_optimizer.load_state_dict(model_tar["q_optimizer_state_dict"])
+                nn_agent.actor_optimizer.load_state_dict(model_tar["actor_optimizer_state_dict"])
 
             nn_agent.to(self.agent_config.device)
