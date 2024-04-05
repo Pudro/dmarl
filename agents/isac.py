@@ -43,6 +43,8 @@ class ISAC_Agent(Base_Agent):
         self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
         self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
 
+        self.to(self.device)
+
 
     def get_action_probs(self, observations):
         logits = self.actor(observations)
@@ -50,3 +52,8 @@ class ISAC_Agent(Base_Agent):
         action_probs = policy_dist.probs
         log_prob = F.log_softmax(logits, dim=1)
         return log_prob, action_probs
+
+    def get_action(self, observations):
+        logits = self.actor(observations)
+        policy_dist = Categorical(logits=logits)
+        return policy_dist.sample()

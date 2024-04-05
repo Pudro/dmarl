@@ -33,7 +33,7 @@ class ISAC_Trainer(Base_Trainer):
             else:
                 action_fut = torch.jit.fork(
                     torch.argmax,
-                    nn_agent.actor(
+                    nn_agent.get_action(
                         torch.tensor(observations[nn_agent.agent_name].flatten()).to(
                             self.agent_config.device
                         ),
