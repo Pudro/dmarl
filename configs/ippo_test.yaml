@@ -1,0 +1,94 @@
+env:
+  env_id: "custom_battle"
+  log_dir: "./logs/ippo_test/"
+  project_name: "MAgent2"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  wandb_user_name: "your_user_name"
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  device: "cpu"
+  minimap_mode: False
+  max_cycles: 100 # number of env.steps in an episode
+  extra_features: False
+  map_size: 20
+  seed: 1
+  running_steps: 250000
+  render_episode_period: 5
+
+agents:
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/ippo_test/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "IPPO"  # the learning algorithms_marl
+  side_name: "red"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20
+  batch_size: 20
+  learning_start: 0
+  learning_rate: 0.001
+  gamma: 0.95  # red expects future rewards
+  tau: 0.005
+  alpha: 0.2
+  gae_lambda: 1
+  clip_coef: 0.2
+  vf_coef: 0.75
+  entropy_coef: 0.01
+  max_grad_norm: 1.0
+  normalize_advantages: True
+  clip_vloss: True
+
+  start_greedy: 0.5
+  end_greedy: 0.05
+  temperature: 0.1
+  train_per_step: False  # True: train model per step; False: train model per episode.
+  train_period: 1 # same as rollout buffer_size
+  sync_period: 100
+
+
+  eval_interval: 100000
+  test_episode: 5
+
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/ippo_test/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "IPPO"  # the learning algorithms_marl
+  side_name: "blue"
+  layer_type: "Linear"
+  hidden_layers: [64,]
+  activation: "ReLU"
+
+  buffer_size: 20
+  batch_size: 20
+  learning_start: 0
+  learning_rate: 0.001
+  gamma: 0.3  # blue is greedy
+  tau: 0.005
+  alpha: 0.2
+  gae_lambda: 1
+  clip_coef: 0.2
+  vf_coef: 0.75
+  entropy_coef: 0.01
+  max_grad_norm: 1.0
+  normalize_advantages: True
+  clip_vloss: True
+
+  start_greedy: 0.5
+  end_greedy: 0.05
+  temperature: 0.1
+  train_per_step: False  # True: train model per step; False: train model per episode.
+  train_period: 1 # same as rollout buffer_size
+  sync_period: 100
+
+
+  eval_interval: 100000
+  test_episode: 5

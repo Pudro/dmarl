@@ -1,24 +1,24 @@
 env:
   env_id: "custom_battle"
-  log_dir: "./logs/iql_test_battle/"
+  log_dir: "./logs/iql_gamma_test/"
   project_name: "MAgent2"
   logger: "tensorboard"  # Choices: tensorboard, wandb.
   wandb_user_name: "your_user_name"
   render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
-  test_mode: False
   device: "cpu"
   minimap_mode: False
-  max_cycles: 1000 # number of env.steps in an episode
+  max_cycles: 2000 # number of env.steps in an episode
   extra_features: False
   map_size: 20
   seed: 1
-  running_steps: 1000000
-  render_episode_period: 1
+  running_steps: 250000
+  render_episode_period: 5
 
 agents:
 -
-  model_dir_load: "models/iql_test_battle/2024-3-19_14:31:13/red"
-  model_dir_save: "./models/iql_test_battle/"
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/gamma_test/"
   load_policy_only: False
   reset_optimizer: False
   algorithm: "IQL"  # the learning algorithms_marl
@@ -29,9 +29,9 @@ agents:
 
   buffer_size: 20000
   batch_size: 32
-  learning_start: 50
+  learning_start: 1000
   learning_rate: 0.001
-  gamma: 0.95  # discount factor
+  gamma: 0.95  # red expects future rewards
   tau: 0.005
 
   start_greedy: 0.5
@@ -48,21 +48,22 @@ agents:
   test_episode: 5
 
 -
-  model_dir_load: "models/iql_test_battle/2024-3-19_14:31:13/blue"
-  model_dir_save: "./models/iql_test_battle/"
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/gamma_test/"
   load_policy_only: False
   reset_optimizer: False
   algorithm: "IQL"  # the learning algorithms_marl
   side_name: "blue"
   layer_type: "Linear"
-  hidden_layers: [16, 32]
+  hidden_layers: [64,]
   activation: "ReLU"
 
   buffer_size: 20000
   batch_size: 32
-  learning_start: 50
+  learning_start: 1000
   learning_rate: 0.001
-  gamma: 0.95  # discount factor
+  gamma: 0.3  # blue is greedy
   tau: 0.005
 
   start_greedy: 0.5
