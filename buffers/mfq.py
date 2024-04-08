@@ -24,7 +24,7 @@ except ImportError:
     psutil = None
 
 
-from stable_baselines3.common.buffers import ReplayBuffer, BaseBuffer
+from stable_baselines3.common.buffers import ReplayBuffer
 
 
 class MFQ_Buffer(ReplayBuffer):

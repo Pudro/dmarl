@@ -21,6 +21,8 @@ class MAPPO_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
+        raise NotImplementedError
+
     def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
         for nn_agent in self.nn_agents:
