@@ -193,7 +193,6 @@ class MFQ_Trainer(Base_Trainer):
         self.epsilon = 0 if self.epsilon < 0 else self.epsilon
     
 
-    # TODO: update parameters saving
     def save_agents(self, checkpoint=None):
 
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
@@ -210,12 +209,14 @@ class MFQ_Trainer(Base_Trainer):
                     "agent_name": nn_agent.agent_name,
                     "network_state_dict": nn_agent.network.state_dict(),
                     "target_network_state_dict": nn_agent.target_network.state_dict(),
+                    "mean_network_state_dict": nn_agent.mean_network.state_dict(),
+                    "target_mean_network_state_dict": nn_agent.target_mean_network.state_dict(),
+                    "cat_layer_state_dict": nn_agent.cat_layer.state_dict(),
                     "optimizer_state_dict": nn_agent.optimizer.state_dict(),
                 },
                 save_path + f"/{nn_agent.agent_name}.tar",
             )
 
-    # TODO: update parameter loading
     def load_agents(self):
         model_files = sorted(
             os.listdir(self.agent_config.model_dir_load),
@@ -230,11 +231,11 @@ class MFQ_Trainer(Base_Trainer):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
             nn_agent.network.load_state_dict(model_tar["network_state_dict"])
-            breakpoint()
             if not self.agent_config.load_policy_only:
-                nn_agent.target_network.load_state_dict(
-                    model_tar["target_network_state_dict"]
-                )
+                nn_agent.target_network.load_state_dict(model_tar["target_network_state_dict"])
+                nn_agent.mean_network.load_state_dict(model_tar["mean_network_state_dict"])
+                nn_agent.target_mean_network.load_state_dict(model_tar["target_mean_network_state_dict"])
+                nn_agent.cat_layer.load_state_dict(model_tar["cat_layer_state_dict"])
 
             if not self.agent_config.reset_optimizer:
                 nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
