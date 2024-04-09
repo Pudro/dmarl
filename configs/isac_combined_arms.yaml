@@ -1,0 +1,120 @@
+env:
+  env_id: "r3_combined_arms"
+  log_dir: "./logs/isac_combined/"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  project_name: ""
+  wandb_user_name: ""
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  device: "cpu"
+  minimap_mode: False
+  max_cycles: 2000 # number of env.steps in an episode
+  extra_features: False
+  map_size: 40
+  seed: 1
+  running_steps: 500000
+  render_episode_period: 10
+agents:
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/isac_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "ISAC"  # the learning algorithms_marl
+  side_name: "redmelee"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 10000
+  batch_size: 128
+  learning_start: 10000
+  learning_rate: 0.001
+  gamma: 0.99
+  tau: 0.005
+  alpha: 0.2
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 64
+  target_network_train_period: 128
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/isac_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "ISAC"  # the learning algorithms_marl
+  side_name: "redranged"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 10000
+  batch_size: 128
+  learning_start: 10000
+  learning_rate: 0.001
+  gamma: 0.99
+  tau: 0.005
+  alpha: 0.2
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 64
+  target_network_train_period: 128
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/isac_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "ISAC"  # the learning algorithms_marl
+  side_name: "greenmelee"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 10000
+  batch_size: 128
+  learning_start: 10000
+  learning_rate: 0.001
+  gamma: 0.99
+  tau: 0.005
+  alpha: 0.2
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 64
+  target_network_train_period: 128
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/isac_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "ISAC"  # the learning algorithms_marl
+  side_name: "greenranged"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 10000
+  batch_size: 128
+  learning_start: 10000
+  learning_rate: 0.001
+  gamma: 0.99
+  tau: 0.005
+  alpha: 0.2
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 64
+  target_network_train_period: 128
