@@ -1,0 +1,120 @@
+env:
+  env_id: "r3_combined_arms"
+  log_dir: "./logs/mfq_combined/"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  project_name: ""
+  wandb_user_name: ""
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  device: "cpu"
+  minimap_mode: False
+  max_cycles: 2000 # number of env.steps in an episode
+  extra_features: False
+  map_size: 45
+  seed: 1
+  running_steps: 500000
+  render_episode_period: 10
+agents:
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/mfq_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "MFQ"  # the learning algorithms_marl
+  side_name: "redmelee"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  hidden_mean_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_start: 20000
+  learning_rate: 0.001
+  gamma: 0.99  # red expects future rewards
+  tau: 0.005
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 128
+  target_network_train_period: 256
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/mfq_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "MFQ"  # the learning algorithms_marl
+  side_name: "redranged"
+  layer_type: "Linear"
+  hidden_layers: [64, ]
+  hidden_mean_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_start: 20000
+  learning_rate: 0.001
+  gamma: 0.99  # red expects future rewards
+  tau: 0.005
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 128
+  target_network_train_period: 256
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/mfq_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "MFQ"  # the learning algorithms_marl
+  side_name: "greenmelee"
+  layer_type: "Linear"
+  hidden_layers: [64,]
+  hidden_mean_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_start: 20000
+  learning_rate: 0.001
+  gamma: 0.99  # blue is greedy
+  tau: 0.005
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 128
+  target_network_train_period: 256
+-
+  test_mode: False
+  model_dir_load: ""
+  model_dir_save: "./models/mfq_combined/"
+  model_checkpoint_period: 50000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "MFQ"  # the learning algorithms_marl
+  side_name: "greenranged"
+  layer_type: "Linear"
+  hidden_layers: [64,]
+  hidden_mean_layers: [64, ]
+  activation: "ReLU"
+
+  buffer_size: 20000
+  batch_size: 256
+  learning_start: 20000
+  learning_rate: 0.001
+  gamma: 0.99  # blue is greedy
+  tau: 0.005
+
+  start_greedy: 1.0
+  end_greedy: 0.0
+  temperature: 0.1
+  train_period: 128
+  target_network_train_period: 256
