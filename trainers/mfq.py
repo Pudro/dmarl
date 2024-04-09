@@ -153,7 +153,8 @@ class MFQ_Trainer(Base_Trainer):
 
         rb_futures = []
 
-        one_hot_actions = F.one_hot(torch.stack([*actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        side_actions = {k: v for k, v in actions.items() if self.side_name in k}
+        one_hot_actions = F.one_hot(torch.stack([*side_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
         mean_actions = torch.mean(one_hot_actions, dim=0)
 
         next_actions = self.get_actions(next_observations, infos=None)
