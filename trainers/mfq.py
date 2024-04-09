@@ -52,7 +52,7 @@ class MFQ_Trainer(Base_Trainer):
                 action_fut = torch.jit.fork(
                     lambda: torch.tensor(
                         self.env.action_space(nn_agent.agent_name).sample()
-                    )
+                    ).to(self.agent_config.device)
                 )
             else:
                 action_fut = torch.jit.fork(
@@ -74,7 +74,7 @@ class MFQ_Trainer(Base_Trainer):
                 action_fut = torch.jit.fork(
                     lambda: torch.tensor(
                         self.env.action_space(nn_agent.agent_name).sample()
-                    )
+                    ).to(self.agent_config.device)
                 )
             else:
                 action_fut = torch.jit.fork(
@@ -171,8 +171,8 @@ class MFQ_Trainer(Base_Trainer):
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
-                    mean_actions,
-                    mean_next_actions
+                    mean_actions.cpu(),
+                    mean_next_actions.cpu()
                 )
             )
 
