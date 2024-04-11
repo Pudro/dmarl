@@ -238,7 +238,7 @@ def get_config(
     g0 = cfg.add_group(melee)
     g1 = cfg.add_group(ranged)
     g2 = cfg.add_group(melee)
-    g3 = cfg.add_group(ranged)
+    g3 = cfg.add_group(melee)
 
     arm0_0 = gw.AgentSymbol(g0, index="any")
     arm0_1 = gw.AgentSymbol(g1, index="any")
