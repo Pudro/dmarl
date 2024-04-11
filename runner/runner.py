@@ -110,7 +110,8 @@ class Runner:
 
         # TODO: this should happen during training also
         for trainer in self.trainers:
-            trainer.save_agents()
+            if not trainer.agent_config.test_mode:
+                trainer.save_agents()
 
     def run(self):
         global_step = 0
@@ -161,7 +162,7 @@ class Runner:
 
                 # save checkpoint
                 for trainer in self.trainers:
-                    if global_step % trainer.agent_config.model_checkpoint_period == 0:
+                    if not trainer.agent_config.test_mode and global_step % trainer.agent_config.model_checkpoint_period == 0:
                         trainer.save_agents(global_step)
 
             self.save_video(global_step)
