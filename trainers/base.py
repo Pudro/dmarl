@@ -55,3 +55,7 @@ class Base_Trainer:
                 )
 
         return nn.ModuleList(agent_list)
+
+    def greedy_decay(self, global_step):
+        epsilon_step = (self.agent_config.start_greedy - self.agent_config.end_greedy) / self.agent_config.greedy_decay_steps
+        self.epsilon = max(self.agent_config.end_greedy, self.agent_config.start_greedy - epsilon_step * global_step)

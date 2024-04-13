@@ -64,7 +64,9 @@ class IQL_Trainer(Base_Trainer):
         def _update_iqn():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
             with torch.no_grad():
-                target_max, indices = nn_agent.target_network(data.next_observations).max(dim=1)
+                target_max, indices = nn_agent.target_network(
+                    data.next_observations
+                ).max(dim=1)
                 td_target = (
                     data.rewards.flatten()
                     + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
@@ -134,10 +136,7 @@ class IQL_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        # TODO: should optimizer.lr be updated?
-        self.epsilon = (1 - (global_step / self.agent_config.running_steps)) * self.agent_config.start_greedy
-        self.epsilon = 0 if self.epsilon < 0 else self.epsilon
-    
+        self.greedy_decay(global_step)
 
     def save_agents(self, checkpoint=None):
 

@@ -11,7 +11,7 @@ env:
   extra_features: False
   map_size: 16
   seed: 1
-  running_steps: 1500000
+  running_steps: 5_000_000
   render_episode_period: 20
 agents:
 -
@@ -36,7 +36,8 @@ agents:
   tau: 0.005
 
   start_greedy: 1.0
-  end_greedy: 0.0
+  end_greedy: 0.05
+  greedy_decay_steps: 20_000
   train_period: 128
   target_network_train_period: 256
 -
@@ -61,6 +62,7 @@ agents:
   tau: 0.005
 
   start_greedy: 1.0
-  end_greedy: 0.0
+  end_greedy: 0.05
+  greedy_decay_steps: 20_000
   train_period: 128
   target_network_train_period: 256

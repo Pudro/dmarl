@@ -175,9 +175,7 @@ class IPPO_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        # TODO: should optimizer.lr be updated?
-        self.epsilon = (1 - (global_step / self.agent_config.running_steps)) * self.agent_config.start_greedy
-        self.epsilon = 0 if self.epsilon < 0 else self.epsilon
+        self.greedy_decay(global_step)
     
 
     def save_agents(self, checkpoint=None):
