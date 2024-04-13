@@ -37,7 +37,7 @@ agents:
 
   start_greedy: 1.0
   end_greedy: 0.05
-  greedy_decay_steps: 20_000
+  greedy_decay_steps: 3_000_000
   train_period: 128
   target_network_train_period: 256
 -
@@ -63,6 +63,6 @@ agents:
 
   start_greedy: 1.0
   end_greedy: 0.05
-  greedy_decay_steps: 20_000
+  greedy_decay_steps: 3_000_000
   train_period: 128
   target_network_train_period: 256
