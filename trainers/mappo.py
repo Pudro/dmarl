@@ -104,9 +104,6 @@ class MAPPO_Trainer(Base_Trainer):
                         + (1.0 - self.agent_config.tau) * target_network_param.data
                     )
 
-        # TODO: currently data is added to the replay buffer on each global_step
-        # maybe add the whole episode to replay buffer each episode
-        # and add episodic returns to each reward
         rb_futures = []
         for nn_agent in self.nn_agents:
             rb_futures.append(

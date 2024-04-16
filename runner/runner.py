@@ -1,4 +1,5 @@
 from typing import List
+from agents.utils import print_summary
 
 from supersuit import black_death_v3
 from agents.base import Base_Agent
@@ -73,6 +74,7 @@ class Runner:
         ]
         self.episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
 
+        print_summary(self.trainers)
         self.run()
 
     def _make_env(self, config: Namespace):
@@ -108,7 +110,6 @@ class Runner:
         else:
             self.writer.close()
 
-        # TODO: this should happen during training also
         for trainer in self.trainers:
             if not trainer.agent_config.test_mode:
                 trainer.save_agents()
