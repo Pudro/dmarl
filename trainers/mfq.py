@@ -22,53 +22,22 @@ class MFQ_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
+        self.old_mean_action_probs = torch.zeros(self.env.action_spaces[f'{self.side_name}_0'].n).to(self.agent_config.device)
+
     def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         # TODO: may move these functions outside
-        def _initial_action_future():
-            return torch.argmax(
-                    nn_agent.network(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        )
-                    )
-                    # dim=0,
-            )
-
-
         def _full_action_future():
             return torch.argmax(
                     nn_agent(
                         torch.tensor(observations[nn_agent.agent_name].flatten()).to(
                             self.agent_config.device
                         ),
-                    mean_actions.to(self.agent_config.device)
+                    self.old_mean_action_probs.to(self.agent_config.device)
                     ),
                     # dim=0,
             )
 
         action_futures = {}
-        for nn_agent in self.nn_agents:
-            if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    ).to(self.agent_config.device)
-                )
-            else:
-                action_fut = torch.jit.fork(
-                    _initial_action_future
-                )
-
-            action_futures[nn_agent.agent_name] = action_fut
-
-        initial_actions = [
-            torch.jit.wait(fut)
-            for fut in action_futures.values()
-        ]
-
-        one_hot_actions = F.one_hot(torch.stack(initial_actions), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
-        mean_actions = torch.mean(one_hot_actions, dim=0)
-        
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
                 action_fut = torch.jit.fork(
@@ -109,11 +78,11 @@ class MFQ_Trainer(Base_Trainer):
                 target_max, indices = nn_agent.target(data.next_observations, data.mean_next_actions).max(dim=1)
                 pi = self.get_boltzmann_policy(target_max)
                 v_mf = target_max * pi
-                # something here should take the mean actions
                 td_target = (
                     data.rewards.flatten()
                     + self.agent_config.gamma * v_mf * (1 - data.dones.flatten())
                 )
+
             old_val = nn_agent(data.observations, data.mean_actions).gather(1, data.actions).squeeze()
             loss = F.mse_loss(td_target, old_val)
 
@@ -138,7 +107,6 @@ class MFQ_Trainer(Base_Trainer):
             # optimize the model
             nn_agent.optimizer.zero_grad()
             loss.backward()
-            # NOTE: here is the optimizer step
             nn_agent.optimizer.step()
 
             # update target network
@@ -154,11 +122,7 @@ class MFQ_Trainer(Base_Trainer):
         rb_futures = []
 
         side_actions = {k: v for k, v in actions.items() if self.side_name in k}
-        one_hot_actions = F.one_hot(torch.stack([*side_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
-        mean_actions = torch.mean(one_hot_actions, dim=0)
-
-        next_actions = self.get_actions(next_observations, infos=None)
-        one_hot_next_actions = F.one_hot(torch.stack([*next_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        one_hot_next_actions = F.one_hot(torch.stack([*side_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
         mean_next_actions = torch.mean(one_hot_next_actions, dim=0)
 
         for nn_agent in self.nn_agents:
@@ -171,7 +135,7 @@ class MFQ_Trainer(Base_Trainer):
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
-                    mean_actions.cpu(),
+                    self.old_mean_action_probs.cpu(),
                     mean_next_actions.cpu()
                 )
             )
@@ -189,6 +153,8 @@ class MFQ_Trainer(Base_Trainer):
             torch.jit.wait(fut)
 
         self.greedy_decay(global_step)
+
+        self.old_mean_action_probs = mean_next_actions
     
 
     def save_agents(self, checkpoint=None):
