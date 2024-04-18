@@ -16,7 +16,7 @@ class MFQ_Trainer(Base_Trainer):
         self.agent_config = agent_config
         self.env = env
         self.epsilon = self.agent_config.start_greedy
-        self.temperature = self.agent_config.temperature
+        self.temperature = self.agent_config.start_temperature
         super().__init__(agent_config, env)
 
         if self.agent_config.model_dir_load:
@@ -103,6 +103,11 @@ class MFQ_Trainer(Base_Trainer):
                     self.epsilon,
                     global_step,
                 )
+                writer.add_scalar(
+                    f"temperature/{nn_agent.agent_name}",
+                    self.temperature,
+                    global_step,
+                )
 
             # optimize the model
             nn_agent.optimizer.zero_grad()
@@ -153,6 +158,7 @@ class MFQ_Trainer(Base_Trainer):
             torch.jit.wait(fut)
 
         self.greedy_decay(global_step)
+        self.temperature_decay(global_step)
 
         self.old_mean_action_probs = mean_next_actions
     
@@ -205,3 +211,7 @@ class MFQ_Trainer(Base_Trainer):
                 nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
 
             nn_agent.to(self.agent_config.device)
+
+    def temperature_decay(self, global_step):
+        temperature_step = (self.agent_config.start_temperature - self.agent_config.end_temperature) / self.agent_config.temperature_decay_steps
+        self.temperature = max(self.agent_config.end_temperature, self.agent_config.start_temperature - temperature_step * global_step)
