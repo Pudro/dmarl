@@ -229,7 +229,6 @@ class _parallel_env(magent_parallel_env, EzPickle):
 
         handles = env.get_handles()
         reward_vals = np.array([1, -1, -1, -1, -1] + list(reward_args.values()))
-        breakpoint()
         reward_range = [
             np.minimum(reward_vals, 0).sum(),
             np.maximum(reward_vals, 0).sum(),
