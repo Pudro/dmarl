@@ -79,3 +79,5 @@ class Base_Trainer:
         if self.epsilon > self.agent_config.end_greedy and last_average_returns >= self.agent_config.greedy_reward_threshold:
             self.epsilon = self.epsilon - self.agent_config.greedy_delta
             self.agent_config.greedy_reward_threshold = self.agent_config.greedy_reward_threshold + self.agent_config.greedy_reward_increment
+        elif self.epsilon < self.agent_config.end_greedy:
+            self.epsilon = self.agent_config.end_greedy

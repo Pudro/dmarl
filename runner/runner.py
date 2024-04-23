@@ -72,8 +72,8 @@ class Runner:
         self.all_agent_networks = [
             nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
         ]
-        self.episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
-        self.last_episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
+        self.episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
+        self.last_episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
 
         print_summary(self.trainers)
         self.run()
