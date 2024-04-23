@@ -73,6 +73,7 @@ class Runner:
             nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
         ]
         self.episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
+        self.last_episodic_returns = {nn_agent.agent_name: 0 for nn_agent in self.all_agent_networks}
 
         print_summary(self.trainers)
         self.run()
@@ -133,6 +134,7 @@ class Runner:
                     truncations,
                     infos,
                 ) = self.env.step(actions)
+                infos['last_episodic_returns'] = self.last_episodic_returns
                 # current_episode_rewards.append(rewards)
                 # TODO: this should be handled by the writer
                 self.add_rewards(rewards)
@@ -167,6 +169,7 @@ class Runner:
                         trainer.save_agents(global_step)
 
             self.save_video(global_step)
+            self.last_episodic_returns = self.episodic_returns.copy()
             self.save_episodic_returns(global_step)
             cycle_bar.close()
             episode += 1

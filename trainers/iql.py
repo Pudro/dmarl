@@ -133,7 +133,7 @@ class IQL_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        self.greedy_decay(global_step)
+        self.greedy_decay(global_step, infos)
 
     def save_agents(self, checkpoint=None):
 

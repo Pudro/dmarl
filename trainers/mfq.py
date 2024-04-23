@@ -157,7 +157,7 @@ class MFQ_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        self.greedy_decay(global_step)
+        self.greedy_decay(global_step, infos)
         self.temperature_decay(global_step)
 
         self.old_mean_action_probs = mean_next_actions
