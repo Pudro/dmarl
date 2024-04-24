@@ -1,20 +1,26 @@
 from agents.base import Base_Agent
+from agents.random import Random_Agent
 from trainers.base import Base_Trainer
+from trainers.random import Random_Trainer
 
 
 def get_nn_agent_size(nn_agent: Base_Agent):
     param_size = 0
-    for param in nn_agent.parameters():
-        param_size += param.nelement() * param.element_size()
     buffer_size = 0
-    for buffer in nn_agent.buffers():
-        buffer_size += buffer.nelement() * buffer.element_size()
+
+    print(type(nn_agent))
+    if not isinstance(nn_agent, Random_Agent):
+        for param in nn_agent.parameters():
+            param_size += param.nelement() * param.element_size()
+        for buffer in nn_agent.buffers():
+            buffer_size += buffer.nelement() * buffer.element_size()
 
     return param_size + buffer_size
 
 
 def count_nn_agent_parameters(nn_agent: Base_Agent):
-    return sum(p.numel() for p in nn_agent.parameters())
+    if not isinstance(nn_agent, Random_Agent):
+        return sum(p.numel() for p in nn_agent.parameters())
 
 
 def print_summary(trainer_list: list[Base_Trainer]):
