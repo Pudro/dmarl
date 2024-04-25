@@ -64,12 +64,23 @@ class Base_Trainer:
             return self._linear_greedy
         elif self.agent_config.greedy_decay_type == 'Adaptive':
             return self._adaptive_greedy
+        elif self.agent_config.greedy_decay_type == 'Exponential':
+            return self._exponential_greedy
         else:
             return self._linear_greedy
 
     def _linear_greedy(self, global_step, infos):
-        epsilon_step = (self.agent_config.start_greedy - self.agent_config.end_greedy) / self.agent_config.greedy_decay_steps
-        self.epsilon = max(self.agent_config.end_greedy, self.agent_config.start_greedy - epsilon_step * global_step)
+        if global_step < self.agent_config.greedy_decay_steps:
+            epsilon_step = (self.agent_config.start_greedy - self.agent_config.end_greedy) / self.agent_config.greedy_decay_steps
+            self.epsilon = max(self.agent_config.end_greedy, self.agent_config.start_greedy - epsilon_step * global_step)
+        else:
+            self.epsilon = self.agent_config.end_greedy
+
+    def _exponential_greedy(self, global_step, infos):
+        if global_step < self.agent_config.greedy_decay_steps:
+            self.epsilon = self.agent_config.end_greedy + (self.agent_config.start_greedy - self.agent_config.end_greedy) * np.exp(-self.agent_config.greedy_decay_rate * global_step)
+        else:
+            self.epsilon = self.agent_config.end_greedy
 
     def _adaptive_greedy(self, global_step, infos):
         last_average_returns = np.mean(tuple(r for k, r in infos['last_episodic_returns'].items() if self.side_name in k))
