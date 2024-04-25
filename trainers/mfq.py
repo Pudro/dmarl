@@ -2,6 +2,7 @@ from supersuit.multiagent_wrappers import black_death_v3
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
+from typing import Callable
 import os
 import torch
 import random
@@ -214,32 +215,32 @@ class MFQ_Trainer(Base_Trainer):
             nn_agent.to(self.agent_config.device)
 
     def _get_temperature_decay(self) -> Callable:
-        if not hasattr(self.agent_config, 'temperature_decay_type') or self.agent_config.greedy_decay_type == 'Linear':
+        if not hasattr(self.agent_config, 'temperature_decay_type') or self.agent_config.temperature_decay_type == 'Linear':
             return self._linear_temperature
-        elif self.agent_config.greedy_decay_type == 'Adaptive':
+        elif self.agent_config.temperature_decay_type == 'Adaptive':
             return self._adaptive_temperature
-        elif self.agent_config.greedy_decay_type == 'Exponential':
+        elif self.agent_config.temperature_decay_type == 'Exponential':
             return self._exponential_temperature
         else:
             return self._linear_temperature
 
     def _linear_temperature(self, global_step, infos):
-        if global_step < self.agent_config.greedy_decay_steps:
-            epsilon_step = (self.agent_config.start_temperature - self.agent_config.end_temperature) / self.agent_config.greedy_decay_steps
-            self.epsilon = max(self.agent_config.end_temperature, self.agent_config.start_temperature - epsilon_step * global_step)
+        if global_step < self.agent_config.temperature_steps:
+            temp_step = (self.agent_config.start_temperature - self.agent_config.end_temperature) / self.agent_config.temperature_decay_steps
+            self.temperature = max(self.agent_config.end_temperature, self.agent_config.start_temperature - temp_step * global_step)
         else:
-            self.epsilon = self.agent_config.end_temperature
+            self.temperature = self.agent_config.end_temperature
 
     def _exponential_temperature(self, global_step, infos):
-        if global_step < self.agent_config.greedy_decay_steps:
-            self.epsilon = self.agent_config.end_temperature + (self.agent_config.start_temperature - self.agent_config.end_temperature) * np.exp(-self.agent_config.greedy_decay_rate * global_step)
+        if global_step < self.agent_config.temperature_decay_steps:
+            self.temperature = self.agent_config.end_temperature + (self.agent_config.start_temperature - self.agent_config.end_temperature) * np.exp(-self.agent_config.temperature_decay_rate * global_step)
         else:
-            self.epsilon = self.agent_config.end_temperature
+            self.temperature = self.agent_config.end_temperature
 
     def _adaptive_temperature(self, global_step, infos):
         last_average_returns = np.mean(tuple(r for k, r in infos['last_episodic_returns'].items() if self.side_name in k))
-        if self.epsilon > self.agent_config.end_temperature and last_average_returns >= self.agent_config.greedy_reward_threshold:
-            self.epsilon = self.epsilon - self.agent_config.greedy_delta
-            self.agent_config.greedy_reward_threshold = self.agent_config.greedy_reward_threshold + self.agent_config.greedy_reward_increment
-        elif self.epsilon < self.agent_config.end_temperature:
-            self.epsilon = self.agent_config.end_temperature
+        if self.temperature > self.agent_config.end_temperature and last_average_returns >= self.agent_config.temperature_reward_threshold:
+            self.temperature = self.temperature - self.agent_config.temperature_delta
+            self.agent_config.temperature_reward_threshold = self.agent_config.temperature_reward_threshold + self.agent_config.temperature_reward_increment
+        elif self.temperature < self.agent_config.end_temperature:
+            self.temperature = self.agent_config.end_temperature
