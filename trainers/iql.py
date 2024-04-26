@@ -163,7 +163,6 @@ class IQL_Trainer(Base_Trainer):
             model_files,
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
-        breakpoint()
         if len(model_files) < len(self.nn_agents):
             raise Exception(
                 f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"

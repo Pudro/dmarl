@@ -227,7 +227,7 @@ class MFQ_Trainer(Base_Trainer):
             return self._linear_temperature
 
     def _linear_temperature(self, global_step, infos):
-        if global_step < self.agent_config.temperature_steps:
+        if global_step < self.agent_config.temperature_decay_steps:
             temp_step = (self.agent_config.start_temperature - self.agent_config.end_temperature) / self.agent_config.temperature_decay_steps
             self.temperature = max(self.agent_config.end_temperature, self.agent_config.start_temperature - temp_step * global_step)
         else:
