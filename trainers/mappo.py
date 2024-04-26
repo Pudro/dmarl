@@ -155,8 +155,10 @@ class MAPPO_Trainer(Base_Trainer):
             )
 
     def load_agents(self):
+        all_files = os.listdir(self.agent_config.model_dir_load)
+        model_files = [f for f in all_files if os.path.isfile(os.path.join(self.agent_config.model_dir_load, f))]
         model_files = sorted(
-            os.listdir(self.agent_config.model_dir_load),
+            model_files,
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
         if len(model_files) < len(self.nn_agents):
