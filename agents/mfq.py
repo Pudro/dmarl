@@ -38,7 +38,8 @@ class MFQ_Agent(Base_Agent):
         # self.target_network.to(self.device)
 
         input_dim = self.env.action_spaces[self.agent_name].n
-        hidden_dims = self.agent_config.hidden_mean_layers
+        # hidden_dims = self.agent_config.hidden_mean_layers
+        hidden_dims = self.agent_config.hidden_layers
         output_dim = self.env.action_spaces[self.agent_name].n
         # mean_network_layers = self._get_network_layers(input_dim, hidden_dims, output_dim)
         # self.mean_network = nn.Sequential(*mean_network_layers)

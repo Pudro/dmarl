@@ -77,9 +77,9 @@ class MFQ_Trainer(Base_Trainer):
             data = nn_agent.rb.sample(self.agent_config.batch_size)
 
             with torch.no_grad():
-                target_max, indices = nn_agent.target(data.next_observations, data.mean_next_actions).max(dim=1)
-                pi = self.get_boltzmann_policy(target_max)
-                v_mf = target_max * pi
+                target_batches = nn_agent.target(data.next_observations, data.mean_next_actions) #.max(dim=1)
+                pi_batches = self.get_boltzmann_policy(target_batches)
+                v_mf, _ = (target_batches * pi_batches).max(dim = 1)
                 td_target = (
                     data.rewards.flatten()
                     + self.agent_config.gamma * v_mf * (1 - data.dones.flatten())
@@ -181,9 +181,9 @@ class MFQ_Trainer(Base_Trainer):
                     "agent_name": nn_agent.agent_name,
                     "network_state_dict": nn_agent.network.state_dict(),
                     "target_network_state_dict": nn_agent.target_network.state_dict(),
-                    "mean_network_state_dict": nn_agent.mean_network.state_dict(),
-                    "target_mean_network_state_dict": nn_agent.target_mean_network.state_dict(),
-                    "cat_layer_state_dict": nn_agent.cat_layer.state_dict(),
+                    # "mean_network_state_dict": nn_agent.mean_network.state_dict(),
+                    # "target_mean_network_state_dict": nn_agent.target_mean_network.state_dict(),
+                    # "cat_layer_state_dict": nn_agent.cat_layer.state_dict(),
                     "optimizer_state_dict": nn_agent.optimizer.state_dict(),
                 },
                 save_path + f"/{nn_agent.agent_name}.tar",
@@ -207,9 +207,9 @@ class MFQ_Trainer(Base_Trainer):
             nn_agent.network.load_state_dict(model_tar["network_state_dict"])
             if not self.agent_config.load_policy_only:
                 nn_agent.target_network.load_state_dict(model_tar["target_network_state_dict"])
-                nn_agent.mean_network.load_state_dict(model_tar["mean_network_state_dict"])
-                nn_agent.target_mean_network.load_state_dict(model_tar["target_mean_network_state_dict"])
-                nn_agent.cat_layer.load_state_dict(model_tar["cat_layer_state_dict"])
+                # nn_agent.mean_network.load_state_dict(model_tar["mean_network_state_dict"])
+                # nn_agent.target_mean_network.load_state_dict(model_tar["target_mean_network_state_dict"])
+                # nn_agent.cat_layer.load_state_dict(model_tar["cat_layer_state_dict"])
 
             if not self.agent_config.reset_optimizer:
                 nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
