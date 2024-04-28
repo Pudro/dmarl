@@ -15,7 +15,6 @@ class IPPO_Trainer(Base_Trainer):
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
-        self.epsilon = self.agent_config.start_greedy
         super().__init__(agent_config, env)
 
         if self.agent_config.model_dir_load:
@@ -24,22 +23,15 @@ class IPPO_Trainer(Base_Trainer):
     def get_actions(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
         for nn_agent in self.nn_agents:
-            if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
-            else:
-                action_fut = torch.jit.fork(
-                    torch.argmax,
-                    nn_agent.get_action(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
+            action_fut = torch.jit.fork(
+                torch.argmax,
+                nn_agent.get_action(
+                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(
+                        self.agent_config.device
                     ),
-                    # dim=0,
-                )
+                ),
+                # dim=0,
+            )
 
             action_futures[nn_agent.agent_name] = action_fut
 
@@ -138,11 +130,6 @@ class IPPO_Trainer(Base_Trainer):
                     rewards[nn_agent.agent_name],
                     global_step,
                 )
-                writer.add_scalar(
-                    f"epsilon_greedy/{nn_agent.agent_name}",
-                    self.epsilon,
-                    global_step,
-                )
 
         rb_futures = []
         for nn_agent in self.nn_agents:
@@ -175,7 +162,6 @@ class IPPO_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        self.greedy_decay(global_step, infos)
     
 
     def save_agents(self, checkpoint=None):
