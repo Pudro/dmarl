@@ -152,12 +152,10 @@ class IPPO_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        if global_step > self.agent_config.learning_start:
-            if global_step % self.agent_config.train_period == 0:
-                update_futures = []
-                for nn_agent in self.nn_agents:
-                    if nn_agent.rb.full:
-                        update_futures.append(torch.jit.fork(_update_ippo))
+        update_futures = []
+        for nn_agent in self.nn_agents:
+            if nn_agent.rb.full:
+                update_futures.append(torch.jit.fork(_update_ippo))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
