@@ -1,4 +1,5 @@
 from agents.ippo import IPPO_Agent
+from buffers.ippo import IPPO_Buffer_Samples
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
@@ -15,6 +16,8 @@ class IPPO_Trainer(Base_Trainer):
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
+        self.last_episode = 0
+        self.last_global_step = 0
         super().__init__(agent_config, env)
 
         if self.agent_config.model_dir_load:
@@ -24,11 +27,9 @@ class IPPO_Trainer(Base_Trainer):
         action_futures = {}
         for nn_agent in self.nn_agents:
             action_fut = torch.jit.fork(
-                torch.argmax,
-                nn_agent.get_action(
-                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                        self.agent_config.device
-                    ),
+                nn_agent.get_action,
+                torch.tensor(observations[nn_agent.agent_name].flatten()).to(
+                    self.agent_config.device
                 ),
                 # dim=0,
             )
@@ -54,8 +55,44 @@ class IPPO_Trainer(Base_Trainer):
         writer,
     ):
         def _update_ippo():
-            nn_agent.rb.compute_returns_and_advantage(torch.tensor(nn_agent.rb.values[-1]), terminations[nn_agent.agent_name])
-            rb_gen = nn_agent.rb.get(self.agent_config.batch_size)
+            rollout_data = nn_agent.rb.sample()
+
+            # compute advantages
+            with torch.no_grad():
+                next_value = nn_agent.get_action(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device))
+                advantages = torch.zeros_like(rollout_data.rewards)
+                lastgaelam = 0
+                for t in reversed(range(len(rollout_data))):
+                    if t == self.agent_config.buffer_size - 1:
+                        nextnonterminal = 1.0
+                        nextvalues = next_value
+                    else:
+                        nextnonterminal = 1.0 - terminations[nn_agent.agent_name]
+                        nextvalues = rollout_data.values[t + 1]
+                    delta = rollout_data.rewards[t] + self.agent_config.gamma * nextvalues * nextnonterminal - rollout_data.values[t]
+                    advantages[t] = lastgaelam = delta + self.agent_config.gamma * self.agent_config.gae_lambda * nextnonterminal * lastgaelam
+
+                returns = advantages + rollout_data.values
+
+                for i in range(len(rollout_data.returns)):
+                    rollout_data.returns[i] = returns[i]
+                    rollout_data.advantages[i] = advantages[i]
+
+
+            batches = [rollout_data[i:i+self.agent_config.batch_size] for i in range(0, len(rollout_data.values), self.agent_config.batch_size)]
+
+            batches = [
+                IPPO_Buffer_Samples(
+                    rollout_data.observations[i:i+self.agent_config.batch_size],
+                    rollout_data.actions[i:i+self.agent_config.batch_size],
+                    rollout_data.rewards[i:i+self.agent_config.batch_size],
+                    rollout_data.episode_numbers[i:i+self.agent_config.batch_size],
+                    rollout_data.log_probs[i:i+self.agent_config.batch_size],
+                    rollout_data.values[i:i+self.agent_config.batch_size],
+                    rollout_data.advantages[i:i+self.agent_config.batch_size],
+                    rollout_data.returns[i:i+self.agent_config.batch_size]
+                ) for i in range(0, len(rollout_data.values), self.agent_config.batch_size)
+            ]
 
             clipfracs = []
             metrics = {'value_losses': [],
@@ -65,9 +102,9 @@ class IPPO_Trainer(Base_Trainer):
                        'approx_kls': [],
                        'clipfracs': []}
 
-            for data in rb_gen:
+            for data in batches:
                 _, newlogprob, entropy, newvalue = nn_agent.get_action_and_value(data.observations, data.actions)
-                logratio = newlogprob - data.old_log_prob
+                logratio = newlogprob - data.log_probs
                 ratio = logratio.exp()
 
                 with torch.no_grad():
@@ -89,8 +126,8 @@ class IPPO_Trainer(Base_Trainer):
                 newvalue = newvalue.view(-1)
                 if self.agent_config.clip_vloss:
                     v_loss_unclipped = (newvalue - data.returns) ** 2
-                    v_clipped = data.old_values + torch.clamp(
-                        newvalue - data.old_values,
+                    v_clipped = data.values + torch.clamp(
+                        newvalue - data.values,
                         -self.agent_config.clip_coef,
                         self.agent_config.clip_coef,
                     )
@@ -137,6 +174,7 @@ class IPPO_Trainer(Base_Trainer):
                 # Compute the metrics needed for the RolloutBuffer
                 _, log_prob, _, value = nn_agent.get_action_and_value(torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device))
                 
+                # TODO: the buffer is subject to change
                 rb_futures.append(
                     torch.jit.fork(
                         nn_agent.rb.add,
@@ -152,13 +190,14 @@ class IPPO_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        update_futures = []
-        for nn_agent in self.nn_agents:
-            if nn_agent.rb.full:
+        if global_step % self.agent_config.buffer_size == 0:
+            update_futures = []
+            for nn_agent in self.nn_agents:
                 update_futures.append(torch.jit.fork(_update_ippo))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
+
 
     
 

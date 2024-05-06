@@ -135,6 +135,7 @@ class Runner:
                     infos,
                 ) = self.env.step(actions)
                 infos['last_episodic_returns'] = self.last_episodic_returns
+                infos['episode'] = episode
                 # current_episode_rewards.append(rewards)
                 # TODO: this should be handled by the writer
                 self.add_rewards(rewards)

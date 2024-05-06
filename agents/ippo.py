@@ -10,6 +10,7 @@ import torch.nn as nn
 import numpy as np
 from torch.distributions.categorical import Categorical
 from stable_baselines3.common.buffers import RolloutBuffer
+from buffers import IPPO_Buffer
 
 
 class IPPO_Agent(Base_Agent):
@@ -37,7 +38,16 @@ class IPPO_Agent(Base_Agent):
 
         del self.network
 
-        self.rb = RolloutBuffer(
+        # self.rb = RolloutBuffer(
+        #     self.agent_config.buffer_size,
+        #     self.env.observation_spaces[self.agent_name],
+        #     self.env.action_spaces[self.agent_name],
+        #     str(self.device),
+        #     self.agent_config.gae_lambda,
+        #     self.agent_config.gamma
+        # )
+
+        self.rb = IPPO_Buffer(
             self.agent_config.buffer_size,
             self.env.observation_spaces[self.agent_name],
             self.env.action_spaces[self.agent_name],
