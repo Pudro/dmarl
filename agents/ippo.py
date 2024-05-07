@@ -71,3 +71,6 @@ class IPPO_Agent(Base_Agent):
         logits = self.actor(observations)
         probs = Categorical(logits=logits)
         return probs.sample()
+
+    def get_value(self, observations):
+        return self.critic(observations)

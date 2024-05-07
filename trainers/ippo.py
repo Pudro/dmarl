@@ -59,7 +59,7 @@ class IPPO_Trainer(Base_Trainer):
 
             # compute advantages
             with torch.no_grad():
-                next_value = nn_agent.get_action(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device))
+                next_value = nn_agent.get_value(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device))
                 advantages = torch.zeros_like(rollout_data.rewards)
                 lastgaelam = 0
                 for t in reversed(range(len(rollout_data))):
@@ -145,6 +145,7 @@ class IPPO_Trainer(Base_Trainer):
                 nn.utils.clip_grad_norm_(nn_agent.parameters(), self.agent_config.max_grad_norm)
                 nn_agent.optimizer.step()
 
+
                 metrics['value_losses'].append(v_loss.item())
                 metrics['policy_losses'].append(pg_loss.item())
                 metrics['entropy_losses'].append(entropy_loss.item())
@@ -155,6 +156,11 @@ class IPPO_Trainer(Base_Trainer):
             nn_agent.rb.reset()
             nn_agent.rb.full = False
 
+            y_pred, y_true = rollout_data.values.cpu().numpy(), rollout_data.returns.cpu().numpy()
+            var_y = np.var(y_true)
+            explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+
+
             if global_step % 1 == 0:
                 writer.add_scalar(f"value_loss/{nn_agent.agent_name}", np.mean(metrics['value_losses']), global_step)
                 writer.add_scalar(f"policy_loss/{nn_agent.agent_name}",  np.mean(metrics['policy_losses']), global_step)
@@ -162,6 +168,7 @@ class IPPO_Trainer(Base_Trainer):
                 writer.add_scalar(f"old_approx_kl/{nn_agent.agent_name}", np.mean(metrics['old_approx_kls']), global_step)
                 writer.add_scalar(f"approx_kl/{nn_agent.agent_name}", np.mean(metrics['approx_kls']), global_step)
                 writer.add_scalar(f"clipfrac/{nn_agent.agent_name}", np.mean(metrics['clipfracs']), global_step)
+                writer.add_scalar(f"explained_variance/{nn_agent.agent_name}", explained_var, global_step)
                 writer.add_scalar(
                     f"reward/{nn_agent.agent_name}",
                     rewards[nn_agent.agent_name],
@@ -174,14 +181,13 @@ class IPPO_Trainer(Base_Trainer):
                 # Compute the metrics needed for the RolloutBuffer
                 _, log_prob, _, value = nn_agent.get_action_and_value(torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device))
                 
-                # TODO: the buffer is subject to change
                 rb_futures.append(
                     torch.jit.fork(
                         nn_agent.rb.add,
                         observations[nn_agent.agent_name],
                         actions[nn_agent.agent_name].cpu(),
                         np.array(rewards[nn_agent.agent_name]),
-                        0,
+                        infos['episode'],
                         value,
                         log_prob
                     )
