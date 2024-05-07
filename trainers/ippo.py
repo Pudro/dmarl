@@ -1,3 +1,4 @@
+from torch.distributions.categorical import Categorical
 from agents.ippo import IPPO_Agent
 from buffers.ippo import IPPO_Buffer_Samples
 from trainers.base import Base_Trainer
@@ -57,27 +58,22 @@ class IPPO_Trainer(Base_Trainer):
         def _update_ippo():
             rollout_data = nn_agent.rb.sample()
 
-            # compute advantages
             with torch.no_grad():
-                next_value = nn_agent.get_value(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device))
+                next_values = nn_agent.critic(torch.tensor(observations[nn_agent.agent_name]).to(self.agent_config.device))
                 advantages = torch.zeros_like(rollout_data.rewards)
-                lastgaelam = 0
-                for t in reversed(range(len(rollout_data))):
+                last_gae_lam = 0
+                for t in reversed(range(len(advantages))):
                     if t == self.agent_config.buffer_size - 1:
-                        nextnonterminal = 1.0
-                        nextvalues = next_value
+                        nextvalues = next_values
                     else:
-                        nextnonterminal = 1.0 - terminations[nn_agent.agent_name]
                         nextvalues = rollout_data.values[t + 1]
-                    delta = rollout_data.rewards[t] + self.agent_config.gamma * nextvalues * nextnonterminal - rollout_data.values[t]
-                    advantages[t] = lastgaelam = delta + self.agent_config.gamma * self.agent_config.gae_lambda * nextnonterminal * lastgaelam
-
+                    delta = rollout_data.rewards[t] + (1 - rollout_data.terminations[t]) * self.agent_config.gamma * nextvalues - rollout_data.values[t]
+                    advantages[t] = last_gae_lam = delta + (1 - rollout_data.terminations[t]) * self.agent_config.gamma * self.agent_config.gae_lambda * last_gae_lam
                 returns = advantages + rollout_data.values
 
                 for i in range(len(rollout_data.returns)):
                     rollout_data.returns[i] = returns[i]
                     rollout_data.advantages[i] = advantages[i]
-
 
             batches = [rollout_data[i:i+self.agent_config.batch_size] for i in range(0, len(rollout_data.values), self.agent_config.batch_size)]
 
@@ -90,7 +86,8 @@ class IPPO_Trainer(Base_Trainer):
                     rollout_data.log_probs[i:i+self.agent_config.batch_size],
                     rollout_data.values[i:i+self.agent_config.batch_size],
                     rollout_data.advantages[i:i+self.agent_config.batch_size],
-                    rollout_data.returns[i:i+self.agent_config.batch_size]
+                    rollout_data.returns[i:i+self.agent_config.batch_size],
+                    rollout_data.terminations[i:i+self.agent_config.batch_size]
                 ) for i in range(0, len(rollout_data.values), self.agent_config.batch_size)
             ]
 
@@ -102,55 +99,46 @@ class IPPO_Trainer(Base_Trainer):
                        'approx_kls': [],
                        'clipfracs': []}
 
+            # === For data in batches ...
+            
             for data in batches:
-                _, newlogprob, entropy, newvalue = nn_agent.get_action_and_value(data.observations, data.actions)
-                logratio = newlogprob - data.log_probs
-                ratio = logratio.exp()
+                # actor loss
+                pi_dist = Categorical(logits=nn_agent.actor(data.observations))
+                log_pi = pi_dist.log_prob(data.actions)
+                ratio = torch.exp(log_pi - data.log_probs)
+                surrogate1 = ratio * data.advantages
+                surrogate2 = torch.clip(ratio, 1 - self.agent_config.clip_coef, 1 + self.agent_config.clip_coef) * data.advantages
+                loss_a = -torch.sum(torch.min(surrogate1, surrogate2), dim=-2, keepdim=True).mean()
 
-                with torch.no_grad():
-                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                    old_approx_kl = (-logratio).mean()
-                    approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > self.agent_config.clip_coef).float().mean().item()]
+                # entropy loss
+                entropy = pi_dist.entropy()
+                loss_e = entropy.mean()
 
-                advantages = data.advantages
-                if self.agent_config.normalize_advantages:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-                # Policy loss
-                pg_loss1 = -advantages * ratio
-                pg_loss2 = -advantages * torch.clamp(ratio, 1 - self.agent_config.clip_coef, 1 + self.agent_config.clip_coef)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
-
-                # Value loss
-                newvalue = newvalue.view(-1)
+                # critic loss
+                value_pred = nn_agent.actor(data.observations)
+                value_target = data.returns
                 if self.agent_config.clip_vloss:
-                    v_loss_unclipped = (newvalue - data.returns) ** 2
-                    v_clipped = data.values + torch.clamp(
-                        newvalue - data.values,
-                        -self.agent_config.clip_coef,
-                        self.agent_config.clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - data.returns) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
+                    value_clipped = data.values + (value_pred - data.values).clamp(-self.agent_config.clip_coef, self.agent_config.clip_coef)
+                    loss_v = (value_pred - value_target) ** 2
+                    loss_v_clipped = (value_clipped - value_target) ** 2
+                    loss_c = torch.max(loss_v, loss_v_clipped)
+                    loss_c = loss_c.sum()
                 else:
-                    v_loss = 0.5 * ((newvalue - data.returns) ** 2).mean()
+                    loss_v = ((value_pred - value_target) ** 2)
+                    loss_c = loss_v.sum()
 
-                entropy_loss = entropy.mean()
-                loss = pg_loss - self.agent_config.entropy_coef * entropy_loss + v_loss * self.agent_config.vf_coef
 
+                loss = loss_a + self.agent_config.vf_coef * loss_c - self.agent_config.entropy_coef * loss_e
                 nn_agent.optimizer.zero_grad()
                 loss.backward()
-                nn.utils.clip_grad_norm_(nn_agent.parameters(), self.agent_config.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(nn_agent.parameters(), self.agent_config.max_grad_norm)
                 nn_agent.optimizer.step()
 
-
-                metrics['value_losses'].append(v_loss.item())
-                metrics['policy_losses'].append(pg_loss.item())
-                metrics['entropy_losses'].append(entropy_loss.item())
-                metrics['old_approx_kls'].append(old_approx_kl.item())
-                metrics['approx_kls'].append(approx_kl.item())
+                metrics['value_losses'].append(loss_c.item())
+                metrics['policy_losses'].append(loss_a.item())
+                metrics['entropy_losses'].append(loss_e.item())
+                # metrics['old_approx_kls'].append(old_approx_kl.item())
+                # metrics['approx_kls'].append(approx_kl.item())
                 metrics['clipfracs'].append(np.mean(clipfracs))
 
             nn_agent.rb.reset()
@@ -159,7 +147,6 @@ class IPPO_Trainer(Base_Trainer):
             y_pred, y_true = rollout_data.values.cpu().numpy(), rollout_data.returns.cpu().numpy()
             var_y = np.var(y_true)
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
-
 
             if global_step % 1 == 0:
                 writer.add_scalar(f"value_loss/{nn_agent.agent_name}", np.mean(metrics['value_losses']), global_step)
@@ -189,7 +176,8 @@ class IPPO_Trainer(Base_Trainer):
                         np.array(rewards[nn_agent.agent_name]),
                         infos['episode'],
                         value,
-                        log_prob
+                        log_prob,
+                        np.array(terminations[nn_agent.agent_name]).astype(float)
                     )
                 )
 
@@ -204,8 +192,6 @@ class IPPO_Trainer(Base_Trainer):
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-
-    
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name

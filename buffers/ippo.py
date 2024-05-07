@@ -13,6 +13,7 @@ class IPPO_Buffer(BaseBuffer):
     episode_numbers: np.ndarray
     log_probs: np.ndarray
     values: np.ndarray
+    teminations: np.ndarray
 
     def __init__(
         self,
@@ -39,6 +40,7 @@ class IPPO_Buffer(BaseBuffer):
         self.log_probs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.advantages = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
+        self.terminations = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
         super().reset()
 
     def add(
@@ -49,6 +51,7 @@ class IPPO_Buffer(BaseBuffer):
         episode_number: np.ndarray,
         value: torch.Tensor,
         log_prob: torch.Tensor,
+        termination: np.ndarray
     ) -> None:
         """
         :param obs: Observation
@@ -78,6 +81,7 @@ class IPPO_Buffer(BaseBuffer):
         self.episode_numbers[self.pos] = np.array(episode_number).copy()
         self.values[self.pos] = value.clone().cpu().numpy().flatten()
         self.log_probs[self.pos] = log_prob.clone().cpu().numpy()
+        self.terminations[self.pos] = termination.copy()
         self.pos += 1
         if self.pos == self.buffer_size:
             self.full = True
@@ -91,7 +95,8 @@ class IPPO_Buffer(BaseBuffer):
             self.log_probs,
             self.values,
             self.advantages,
-            self.returns
+            self.returns,
+            self.terminations
         )
 
         self.reset()
@@ -109,3 +114,4 @@ class IPPO_Buffer_Samples(NamedTuple):
     values: torch.Tensor
     advantages: torch.Tensor
     returns: torch.Tensor
+    terminations: torch.Tensor
