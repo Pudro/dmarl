@@ -59,7 +59,7 @@ class IPPO_Trainer(Base_Trainer):
 
             # compute advantages
             with torch.no_grad():
-                next_value = nn_agent.get_value(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device))
+                next_value = nn_agent.get_value(torch.tensor(next_observations[nn_agent.agent_name]).to(self.agent_config.device).flatten())
                 advantages = torch.zeros_like(rollout_data.rewards)
                 lastgaelam = 0
                 for t in reversed(range(len(rollout_data))):

@@ -84,8 +84,8 @@ class IPPO_Buffer(BaseBuffer):
 
     def sample(self) -> NamedTuple:
         data = (
-            self.observations,
-            self.actions,
+            self.observations[:,0,:],
+            self.actions[:,0,:],
             self.rewards,
             self.episode_numbers,
             self.log_probs,
