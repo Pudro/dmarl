@@ -32,11 +32,9 @@ class ISAC_Trainer(Base_Trainer):
                 )
             else:
                 action_fut = torch.jit.fork(
-                    torch.argmax,
-                    nn_agent.get_action(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
+                    nn_agent.get_action,
+                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(
+                        self.agent_config.device
                     ),
                     # dim=0,
                 )
@@ -64,7 +62,6 @@ class ISAC_Trainer(Base_Trainer):
     ):
         def _update_isac():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
-
 
             # CRITIC TRAINING
             with torch.no_grad():
