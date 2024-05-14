@@ -117,8 +117,8 @@ class QMIX_Trainer(Base_Trainer):
                 q_tot = self.qmixer(agent_q_vals, torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
                 with torch.no_grad():
                     target_q_tot = self.target_qmixer(target_agent_q_vals, torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
-                batch_rewards = batch_rewards.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
-                batch_dones = batch_dones.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
+                # batch_rewards = batch_rewards.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
+                # batch_dones = batch_dones.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
                 # Calculate 1-step Q-Learning targets
                 targets = batch_rewards + self.agent_config.gamma * (1 - batch_dones) * target_q_tot
                 # Td-error
@@ -134,8 +134,8 @@ class QMIX_Trainer(Base_Trainer):
                     nn_agent.optimizer.zero_grad()
 
                 loss.backward()
-                nn.utils.clip_grad_norm_(self.qmixer.parameters(), self.agent_config.max_grad_norm)
-                nn.utils.clip_grad_norm_(self.target_qmixer.parameters(), self.agent_config.max_grad_norm)
+                # nn.utils.clip_grad_norm_(self.qmixer.parameters(), self.agent_config.max_grad_norm)
+                # nn.utils.clip_grad_norm_(self.target_qmixer.parameters(), self.agent_config.max_grad_norm)
 
                 self.qmixer.optimizer.step()
                 self.target_qmixer.optimizer.step()
@@ -294,7 +294,7 @@ class QMixer(nn.Module):
     def forward(self, agent_qs, state):
         bs = agent_qs.size(1)
         state = state.flatten()
-        agent_qs = agent_qs.contiguous().permute(1,0,2) # this might introduce a bug - we want this tensor to be batch invariant, otherwise the net might not transfer well?
+        # agent_qs = agent_qs.contiguous().permute(1,0,2) # this might introduce a bug - we want this tensor to be batch invariant, otherwise the net might not transfer well?
         # First layer
         w1 = torch.abs(self.hyper_w_1(state))
         b1 = self.hyper_b_1(state)
@@ -309,5 +309,5 @@ class QMixer(nn.Module):
         # Compute final output
         y = (hidden @ w_final) + v
         # Reshape and return
-        q_tot = y.view(bs, -1, 1)
-        return q_tot
+        # q_tot = y.view(bs, -1, 1)
+        return y
