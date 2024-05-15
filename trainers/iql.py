@@ -61,7 +61,7 @@ class IQL_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
-        def _update_iqn():
+        def _update_iql():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
             with torch.no_grad():
                 target_max, indices = nn_agent.target_network(
@@ -128,7 +128,7 @@ class IQL_Trainer(Base_Trainer):
         if global_step > self.agent_config.learning_start:
             if global_step % self.agent_config.train_period == 0:
                 for nn_agent in self.nn_agents:
-                    update_futures.append(torch.jit.fork(_update_iqn))
+                    update_futures.append(torch.jit.fork(_update_iql))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
