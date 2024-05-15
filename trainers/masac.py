@@ -84,10 +84,10 @@ class MASAC_Trainer(Base_Trainer):
 
         if global_step > self.agent_config.learning_start:
             if global_step % self.agent_config.train_period == 0:
-                agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size))
-                target_agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size))
-                batch_rewards = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1))
-                batch_dones = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1))
+                agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size)).to(self.agent_config.device)
+                target_agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size)).to(self.agent_config.device)
+                batch_rewards = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1)).to(self.agent_config.device)
+                batch_dones = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1)).to(self.agent_config.device)
                 # CRITIC TRAINING
                 for i, nn_agent in enumerate(self.nn_agents):
                     data = nn_agent.rb.sample(self.agent_config.batch_size)
