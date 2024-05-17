@@ -78,22 +78,6 @@ class IPPO_Trainer(Base_Trainer):
                     rollout_data.returns[i] = returns[i]
                     rollout_data.advantages[i] = advantages[i]
 
-
-            batches = [rollout_data[i:i+self.agent_config.batch_size] for i in range(0, len(rollout_data.values), self.agent_config.batch_size)]
-
-            batches = [
-                IPPO_Buffer_Samples(
-                    rollout_data.observations[i:i+self.agent_config.batch_size],
-                    rollout_data.actions[i:i+self.agent_config.batch_size],
-                    rollout_data.rewards[i:i+self.agent_config.batch_size],
-                    rollout_data.episode_numbers[i:i+self.agent_config.batch_size],
-                    rollout_data.log_probs[i:i+self.agent_config.batch_size],
-                    rollout_data.values[i:i+self.agent_config.batch_size],
-                    rollout_data.advantages[i:i+self.agent_config.batch_size],
-                    rollout_data.returns[i:i+self.agent_config.batch_size]
-                ) for i in range(0, len(rollout_data.values), self.agent_config.batch_size)
-            ]
-
             clipfracs = []
             metrics = {'value_losses': [],
                        'policy_losses': [],
@@ -102,56 +86,74 @@ class IPPO_Trainer(Base_Trainer):
                        'approx_kls': [],
                        'clipfracs': []}
 
-            for data in batches:
-                _, newlogprob, entropy, newvalue = nn_agent.get_action_and_value(data.observations, data.actions)
-                logratio = newlogprob - data.log_probs
-                ratio = logratio.exp()
+            for _ in range(self.agent_config.update_steps):
+                # shuffle rollout_data
+                shuffled_inds = np.random.permutation(np.arange(self.agent_config.buffer_size))
+                batch_inds_list = [shuffled_inds[i:i+self.agent_config.batch_size] for i in range(0, self.agent_config.buffer_size, self.agent_config.batch_size)]
 
-                with torch.no_grad():
-                    # calculate approx_kl http://joschu.net/blog/kl-approx.html
-                    old_approx_kl = (-logratio).mean()
-                    approx_kl = ((ratio - 1) - logratio).mean()
-                    clipfracs += [((ratio - 1.0).abs() > self.agent_config.clip_coef).float().mean().item()]
+                batches = [
+                    IPPO_Buffer_Samples(
+                        rollout_data.observations[batch_inds],
+                        rollout_data.actions[batch_inds],
+                        rollout_data.rewards[batch_inds],
+                        rollout_data.episode_numbers[batch_inds],
+                        rollout_data.log_probs[batch_inds],
+                        rollout_data.values[batch_inds],
+                        rollout_data.advantages[batch_inds],
+                        rollout_data.returns[batch_inds]
+                    ) for batch_inds in batch_inds_list
+                ]
 
-                advantages = data.advantages
-                if self.agent_config.normalize_advantages:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                for data in batches:
+                    _, newlogprob, entropy, newvalue = nn_agent.get_action_and_value(data.observations, data.actions)
+                    logratio = newlogprob - data.log_probs
+                    ratio = logratio.exp()
 
-                # Policy loss
-                pg_loss1 = -advantages * ratio
-                pg_loss2 = -advantages * torch.clamp(ratio, 1 - self.agent_config.clip_coef, 1 + self.agent_config.clip_coef)
-                pg_loss = torch.max(pg_loss1, pg_loss2).mean()
+                    with torch.no_grad():
+                        # calculate approx_kl http://joschu.net/blog/kl-approx.html
+                        old_approx_kl = (-logratio).mean()
+                        approx_kl = ((ratio - 1) - logratio).mean()
+                        clipfracs += [((ratio - 1.0).abs() > self.agent_config.clip_coef).float().mean().item()]
 
-                # Value loss
-                newvalue = newvalue.view(-1)
-                if self.agent_config.clip_vloss:
-                    v_loss_unclipped = (newvalue - data.returns) ** 2
-                    v_clipped = data.values + torch.clamp(
-                        newvalue - data.values,
-                        -self.agent_config.clip_coef,
-                        self.agent_config.clip_coef,
-                    )
-                    v_loss_clipped = (v_clipped - data.returns) ** 2
-                    v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
-                    v_loss = 0.5 * v_loss_max.mean()
-                else:
-                    v_loss = 0.5 * ((newvalue - data.returns) ** 2).mean()
+                    advantages = data.advantages
+                    if self.agent_config.normalize_advantages:
+                        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-                entropy_loss = entropy.mean()
-                loss = pg_loss - self.agent_config.entropy_coef * entropy_loss + v_loss * self.agent_config.vf_coef
+                    # Policy loss
+                    pg_loss1 = -advantages * ratio
+                    pg_loss2 = -advantages * torch.clamp(ratio, 1 - self.agent_config.clip_coef, 1 + self.agent_config.clip_coef)
+                    pg_loss = torch.max(pg_loss1, pg_loss2).mean()
 
-                nn_agent.optimizer.zero_grad()
-                loss.backward()
-                nn.utils.clip_grad_norm_(nn_agent.parameters(), self.agent_config.max_grad_norm)
-                nn_agent.optimizer.step()
+                    # Value loss
+                    newvalue = newvalue.view(-1)
+                    if self.agent_config.clip_vloss:
+                        v_loss_unclipped = (newvalue - data.returns) ** 2
+                        v_clipped = data.values + torch.clamp(
+                            newvalue - data.values,
+                            -self.agent_config.clip_coef,
+                            self.agent_config.clip_coef,
+                        )
+                        v_loss_clipped = (v_clipped - data.returns) ** 2
+                        v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
+                        v_loss = 0.5 * v_loss_max.mean()
+                    else:
+                        v_loss = 0.5 * ((newvalue - data.returns) ** 2).mean()
+
+                    entropy_loss = entropy.mean()
+                    loss = pg_loss - self.agent_config.entropy_coef * entropy_loss + v_loss * self.agent_config.vf_coef
+
+                    nn_agent.optimizer.zero_grad()
+                    loss.backward()
+                    nn.utils.clip_grad_norm_(nn_agent.parameters(), self.agent_config.max_grad_norm)
+                    nn_agent.optimizer.step()
 
 
-                metrics['value_losses'].append(v_loss.item())
-                metrics['policy_losses'].append(pg_loss.item())
-                metrics['entropy_losses'].append(entropy_loss.item())
-                metrics['old_approx_kls'].append(old_approx_kl.item())
-                metrics['approx_kls'].append(approx_kl.item())
-                metrics['clipfracs'].append(np.mean(clipfracs))
+                    metrics['value_losses'].append(v_loss.item())
+                    metrics['policy_losses'].append(pg_loss.item())
+                    metrics['entropy_losses'].append(entropy_loss.item())
+                    metrics['old_approx_kls'].append(old_approx_kl.item())
+                    metrics['approx_kls'].append(approx_kl.item())
+                    metrics['clipfracs'].append(np.mean(clipfracs))
 
             nn_agent.rb.reset()
             nn_agent.rb.full = False
