@@ -106,7 +106,7 @@ class IPPO_Trainer(Base_Trainer):
 
                 for data in batches:
                     _, newlogprob, entropy, newvalue = nn_agent.get_action_and_value(data.observations, data.actions)
-                    logratio = newlogprob - data.log_probs
+                    logratio = newlogprob - data.log_probs.squeeze()
                     ratio = logratio.exp()
 
                     with torch.no_grad():
@@ -115,7 +115,8 @@ class IPPO_Trainer(Base_Trainer):
                         approx_kl = ((ratio - 1) - logratio).mean()
                         clipfracs += [((ratio - 1.0).abs() > self.agent_config.clip_coef).float().mean().item()]
 
-                    advantages = data.advantages
+                    advantages = data.advantages.squeeze()
+
                     if self.agent_config.normalize_advantages:
                         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
@@ -127,13 +128,13 @@ class IPPO_Trainer(Base_Trainer):
                     # Value loss
                     newvalue = newvalue.view(-1)
                     if self.agent_config.clip_vloss:
-                        v_loss_unclipped = (newvalue - data.returns) ** 2
-                        v_clipped = data.values + torch.clamp(
-                            newvalue - data.values,
+                        v_loss_unclipped = (newvalue - data.returns.squeeze()) ** 2
+                        v_clipped = data.values.squeeze() + torch.clamp(
+                            newvalue - data.values.squeeze(),
                             -self.agent_config.clip_coef,
                             self.agent_config.clip_coef,
                         )
-                        v_loss_clipped = (v_clipped - data.returns) ** 2
+                        v_loss_clipped = (v_clipped - data.returns.squeeze()) ** 2
                         v_loss_max = torch.max(v_loss_unclipped, v_loss_clipped)
                         v_loss = 0.5 * v_loss_max.mean()
                     else:

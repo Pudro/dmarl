@@ -61,11 +61,12 @@ class IPPO_Agent(Base_Agent):
 
     def get_action_and_value(self, observations, action=None):
         logits = self.actor(observations)
-        probs = Categorical(logits=logits)
+        policy_dist = Categorical(logits=logits)
         if action is None:
-            action = probs.sample()
+            action = policy_dist.sample()
 
-        return action, probs.log_prob(action), probs.entropy(), self.critic(observations)
+        action = action.squeeze().long()
+        return action, policy_dist.log_prob(action), policy_dist.entropy(), self.critic(observations)
 
     def get_action(self, observations):
         logits = self.actor(observations)
