@@ -5,9 +5,60 @@ from environments.magent_env import MAgentEnv
 from agents.base import Base_Agent
 import os
 import copy
+import torch.optim as optim
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+from torch.distributions.categorical import Categorical
+from stable_baselines3.common.buffers import RolloutBuffer
+
+
+class PPOMemory:
+
+    def __init__(self, batch_size):
+        self.obs = []
+        self.probs = []
+        self.vals = []
+        self.actions = []
+        self.rewards = []
+        self.dones = []
+
+        self.batch_size = batch_size
+
+    def generate_batches(self):
+        n_states = len(self.obs)
+        batch_start = np.arange(0, n_states, self.batch_size)
+        indices = np.arange(n_states, dtype=np.int64)
+        np.random.shuffle(indices)
+        batches = [indices[i:i + self.batch_size] for i in batch_start]
+
+        return (np.array(self.obs),
+                np.array(self.actions),
+                np.array(self.probs),
+                np.array(self.vals),
+                np.array(self.rewards),
+                np.array(self.dones),
+                batches)
+
+    def store_memory(self, state, action, probs, vals, reward, done):
+        self.obs.append(state)
+        self.actions.append(action)
+        self.probs.append(probs)
+        self.vals.append(vals)
+        self.rewards.append(reward)
+        self.dones.append(done)
+
+    def clear_memory(self):
+        self.obs = []
+        self.probs = []
+        self.actions = []
+        self.rewards = []
+        self.dones = []
+        self.vals = []
 
 
 class MAPPO_Agent(Base_Agent):
+
     def __init__(
         self,
         agent_config: Namespace,
@@ -21,8 +72,39 @@ class MAPPO_Agent(Base_Agent):
 
         super().__init__(agent_config, env, agent_name)
 
-        self.target_network = copy.deepcopy(self.network)
-        self.target_network.load_state_dict(self.network.state_dict())
-        self.target_network.to(self.device)
+        self.actor_net = copy.deepcopy(self.network)
+        self.actor_net.load_state_dict(self.network.state_dict())
 
-        raise NotImplementedError
+        del self.network
+
+        self.rb = PPOMemory(self.agent_config.batch_size)
+
+        self.actor_optimizer = optim.Adam(self.actor_net.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
+
+        self.to(self.device)
+
+    def actor(self, obs):
+        dist = self.actor_net(obs)
+        dist = Categorical(F.softmax(dist, dim=-1))
+
+        return dist
+
+    def critic(self, state):
+        value = self.critic_net(state)
+
+        return value
+
+    def choose_action(self, observation, state):
+        dist = self.actor(observation)
+        value = self.critic(state)
+        action = dist.sample()
+
+        probs = torch.squeeze(dist.log_prob(action)).item()
+        action = torch.squeeze(action).item()
+        value = torch.squeeze(value).item()
+
+        return action, probs, value
+
+    def register_value_network(self, network, optimizer):
+        self.critic_net = network
+        self.critic_optimizer = optimizer

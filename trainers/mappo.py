@@ -1,53 +1,66 @@
-from supersuit.multiagent_wrappers import black_death_v3
+from agents.mappo import MAPPO_Agent
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
+import importlib
 import os
 import torch
 import random
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.optim as optim
 import torch.nn.functional as F
 
 
 class MAPPO_Trainer(Base_Trainer):
+
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
+        self.device = self.agent_config.device
         self.env = env
-        self.epsilon = self.agent_config.start_greedy
+        self.last_episode = 0
+        self.last_global_step = 0
         super().__init__(agent_config, env)
+
+        # create value network here
+        input_dim = np.array(self.env.state_space.shape).prod()
+        hidden_dims = self.agent_config.hidden_layers
+        output_dim = 1    # value estimation
+        critic_layers = self._get_network_layers(input_dim, hidden_dims, output_dim)
+        self.value_network = nn.Sequential(*critic_layers)
+        self.value_network_optimizer = optim.Adam(self.value_network.parameters(),
+                                                  lr=self.agent_config.learning_rate,
+                                                  eps=1e-5)
+
+        # register agents here
+        for nn_agent in self.nn_agents:
+            nn_agent.register_value_network(self.value_network, self.value_network_optimizer)
 
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-        raise NotImplementedError
-
-    def get_action_futures(self, observations, infos) -> dict[str, torch.Future]:
+    def get_actions(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
         for nn_agent in self.nn_agents:
-            if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
-            else:
-                # q_values = nn_agent(torch.Tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device))
-                # action = torch.argmax(q_values, dim=0)
-                action_fut = torch.jit.fork(
-                    torch.argmax,
-                    nn_agent(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
-                    ),
-                    # dim=0,
-                )
+            action_fut = torch.jit.fork(
+                nn_agent.choose_action,
+                torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
+                torch.tensor(self.env.state().flatten()).to(self.agent_config.device),
+            )
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        return action_futures
+        result_tuples = {agent_name: torch.jit.wait(fut) for agent_name, fut in action_futures.items()}
+
+        actions = {
+            agent_name: torch.tensor(tup[0]).to(self.agent_config.device) for agent_name,
+            tup in result_tuples.items()
+        }
+        # ugly hack to get actions, probs and values all through runner back to trainer
+        actions['all'] = result_tuples
+
+        return actions
 
     def update_agents(
         self,
@@ -60,81 +73,131 @@ class MAPPO_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
-        def _update_iqn():
-            data = nn_agent.rb.sample(self.agent_config.batch_size)
-            with torch.no_grad():
-                target_max, indices = nn_agent.target_network(data.next_observations).max(dim=1)
-                td_target = (
-                    data.rewards.flatten()
-                    + self.agent_config.gamma * target_max * (1 - data.dones.flatten())
-                )
-            old_val = nn_agent(data.observations).gather(1, data.actions).squeeze()
-            loss = F.mse_loss(td_target, old_val)
+
+        def _update_mappo():
+            clipfracs = []
+            for step in range(self.agent_config.update_steps):
+                (obs_arr,
+                 action_arr,
+                 old_prob_arr,
+                 vals_arr,
+                 reward_arr,
+                 dones_arr,
+                 batches) = nn_agent.rb.generate_batches()
+
+                values = vals_arr
+
+                advantage = self.calculate_advantages(values,
+                                                      reward_arr,
+                                                      dones_arr,
+                                                      self.agent_config.gamma,
+                                                      self.agent_config.gae_lambda)
+
+                if self.agent_config.normalize_advantages:
+                    advantage = (advantage - advantage.mean()) / (advantage.std() + 1e-8)
+
+                advantage = torch.tensor(advantage).to(self.agent_config.device)
+                values = torch.tensor(values).to(self.agent_config.device)
+                for batch in batches:
+                    obs = torch.tensor(obs_arr[batch], dtype=torch.float).to(self.agent_config.device)
+                    old_probs = torch.tensor(old_prob_arr[batch]).to(self.agent_config.device)
+                    actions = torch.tensor(action_arr[batch]).to(self.agent_config.device)
+
+                    dist = nn_agent.actor(obs)
+
+                    entropy = dist.entropy()
+                    entropy_loss = entropy.mean()
+                    critic_value = nn_agent.critic(torch.tensor(self.env.state().flatten()).to(self.agent_config.device))
+                    critic_value = torch.squeeze(critic_value)
+                    new_probs = dist.log_prob(actions)
+                    # prob_ratio = new_probs.exp() / old_probs.exp()
+                    logratio = new_probs - old_probs
+                    prob_ratio = (logratio).exp()
+
+                    with torch.no_grad():
+                        old_approx_kl = (-logratio).mean()
+                        approx_kl = ((prob_ratio - 1) - logratio).mean()
+                        clipfracs += [((prob_ratio - 1.0).abs() > self.agent_config.clip_coef).float().mean().item()]
+
+                    weighted_probs = advantage[batch] * prob_ratio
+                    weighted_clipped_probs = torch.clamp(prob_ratio,
+                                                         1 - self.agent_config.clip_coef,
+                                                         1 + self.agent_config.clip_coef) * advantage[batch]
+                    actor_loss = -torch.min(weighted_probs, weighted_clipped_probs).mean()
+
+                    returns = advantage[batch] + values[batch]
+
+                    if self.agent_config.clip_vloss:
+                        critic_loss_unclipped = (returns - critic_value)**2
+                        critic_clipped = values[batch] + torch.clamp(
+                            critic_value - values[batch],
+                            -self.agent_config.clip_coef,
+                            self.agent_config.clip_coef,
+                        )
+                        critic_loss_clipped = (critic_clipped - returns)**2
+                        critic_loss_max = torch.max(critic_loss_unclipped, critic_loss_clipped)
+                        critic_loss = 0.5 * critic_loss_max.mean()
+                    else:
+                        critic_loss = (returns - critic_value)**2
+                        critic_loss = critic_loss.mean() * 0.5
+
+                    total_loss = actor_loss + critic_loss * self.agent_config.vf_coef - self.agent_config.entropy_coef * entropy_loss
+
+                    nn_agent.actor_optimizer.zero_grad()
+                    nn_agent.critic_optimizer.zero_grad()
+                    total_loss.backward()
+                    nn_agent.actor_optimizer.step()
+                    nn_agent.critic_optimizer.step()
+
+                if self.agent_config.target_kl is not None and approx_kl > self.agent_config.target_kl:
+                    print(f'Target kl: {self.agent_config.target_kl} exceeded at step: {step}. Stopping updates')
+                    break
+
+            y_pred, y_true = values[batch].cpu().numpy(), returns.cpu().numpy()
+            var_y = np.var(y_true)
+            explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+
+            nn_agent.rb.clear_memory()
 
             if global_step % 1 == 0:
-                writer.add_scalar(f"td_loss/{nn_agent.agent_name}", loss, global_step)
-                writer.add_scalar(
-                    f"q_values/{nn_agent.agent_name}",
-                    old_val.mean().item(),
-                    global_step,
-                )
+                writer.add_scalar(f"total_loss/{nn_agent.agent_name}", total_loss, global_step)
+                writer.add_scalar(f"value_loss/{nn_agent.agent_name}", critic_loss, global_step)
+                writer.add_scalar(f"policy_loss/{nn_agent.agent_name}", actor_loss, global_step)
+                writer.add_scalar(f"entropy_loss/{nn_agent.agent_name}", entropy_loss, global_step)
+                writer.add_scalar(f"old_approx_kl/{nn_agent.agent_name}", old_approx_kl, global_step)
+                writer.add_scalar(f"approx_kl/{nn_agent.agent_name}", approx_kl, global_step)
+                writer.add_scalar(f"explained_variance/{nn_agent.agent_name}", explained_var, global_step)
                 writer.add_scalar(
                     f"reward/{nn_agent.agent_name}",
                     rewards[nn_agent.agent_name],
                     global_step,
                 )
-                writer.add_scalar(
-                    f"epsilon_greedy/{nn_agent.agent_name}",
-                    self.epsilon,
-                    global_step,
-                )
-
-            # optimize the model
-            nn_agent.optimizer.zero_grad()
-            loss.backward()
-            nn_agent.optimizer.step()
-
-            # update target network
-            if global_step % self.agent_config.target_network_train_period == 0:
-                for target_network_param, q_network_param in zip(
-                    nn_agent.target_network.parameters(), nn_agent.parameters()
-                ):
-                    target_network_param.data.copy_(
-                        self.agent_config.tau * q_network_param.data
-                        + (1.0 - self.agent_config.tau) * target_network_param.data
-                    )
 
         rb_futures = []
         for nn_agent in self.nn_agents:
+            prob = actions['all'][nn_agent.agent_name][1]
+            val = actions['all'][nn_agent.agent_name][2]
             rb_futures.append(
-                torch.jit.fork(
-                    nn_agent.rb.add,
-                    observations[nn_agent.agent_name],
-                    next_observations[nn_agent.agent_name],
-                    actions[nn_agent.agent_name].cpu(),
-                    np.array(rewards[nn_agent.agent_name]),
-                    np.array(terminations[nn_agent.agent_name]),
-                    infos[nn_agent.agent_name],
-                )
-            )
+                torch.jit.fork(nn_agent.rb.store_memory,
+                               observations[nn_agent.agent_name],
+                               actions[nn_agent.agent_name].cpu(),
+                               prob,
+                               val,
+                               np.array(rewards[nn_agent.agent_name]),
+                               terminations[nn_agent.agent_name]))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
 
-        update_futures = []
-        if global_step > self.agent_config.learning_start:
-            if global_step % self.agent_config.train_period == 0:
-                for nn_agent in self.nn_agents:
-                    update_futures.append(torch.jit.fork(_update_iqn))
+        if global_step % self.agent_config.buffer_size == 0:
+            update_futures = []
+            for nn_agent in self.nn_agents:
+                update_futures.append(torch.jit.fork(_update_mappo))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
-
-        self.greedy_decay(global_step)
-    
 
     def save_agents(self, checkpoint=None):
-
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
         if checkpoint:
             save_path = save_path + "/" + str(checkpoint)
@@ -147,9 +210,10 @@ class MAPPO_Trainer(Base_Trainer):
                 {
                     "agent_config": nn_agent.agent_config,
                     "agent_name": nn_agent.agent_name,
-                    "network_state_dict": nn_agent.network.state_dict(),
-                    "target_network_state_dict": nn_agent.target_network.state_dict(),
-                    "optimizer_state_dict": nn_agent.optimizer.state_dict(),
+                    "actor_state_dict": nn_agent.actor_net.state_dict(),
+                    "critic_state_dict": nn_agent.critic_net.state_dict(),
+                    "actor_optimizer_state_dict": nn_agent.actor_optimizer.state_dict(),
+                    "critic_optimizer_state_dict": nn_agent.critic_optimizer.state_dict(),
                 },
                 save_path + f"/{nn_agent.agent_name}.tar",
             )
@@ -162,20 +226,115 @@ class MAPPO_Trainer(Base_Trainer):
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
         if len(model_files) < len(self.nn_agents):
-            raise Exception(
-                f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"
-            )
+            raise Exception(f"Model directory {self.agent_config.model_dir_load} has fewer files than needed")
 
         for nn_agent, file_name in zip(self.nn_agents, model_files):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
-            nn_agent.network.load_state_dict(model_tar["network_state_dict"])
-            if not self.agent_config.load_policy_only:
-                nn_agent.target_network.load_state_dict(
-                    model_tar["target_network_state_dict"]
-                )
+            nn_agent.actor_net.load_state_dict(model_tar["actor_state_dict"], strict=False)
+            # this was changed from critic_state_dict
+            critic_dict = nn_agent.critic_net.state_dict()
+            critic_dict.update({
+                k: v for k,
+                v in model_tar["critic_state_dict"].items() if k in critic_dict and v.size() == critic_dict[k].size()
+            })
+            nn_agent.critic_net.load_state_dict(critic_dict, strict=False)
 
             if not self.agent_config.reset_optimizer:
-                nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
+                nn_agent.critic_optimizer.load_state_dict(model_tar["critic_optimizer_state_dict"])
+                nn_agent.actor_optimizer.load_state_dict(model_tar["actor_optimizer_state_dict"])
 
             nn_agent.to(self.agent_config.device)
+
+    def remember(self, obs, action, probs, vals, reward, done):
+        self.rb.store_memory(obs, action, probs, vals, reward, done)
+
+    def calculate_advantages(self, values, rewards, dones, gamma, gae_lambda):
+
+        advantages = np.zeros_like(rewards)
+        lastgaelam = 0
+        for t in reversed(range(len(rewards) - 1)):
+            nextnonterminal = 1.0 - dones[t]
+            nextvalues = values[t + 1]
+            delta = rewards[t] + gamma * nextvalues * nextnonterminal - values[t]
+            advantages[t] = lastgaelam = delta + gamma * gae_lambda * nextnonterminal * lastgaelam
+
+        return advantages
+
+    def _get_network_layers(self, input_dim, hidden_dims, output_dim) -> list[nn.Module]:
+        Layer_Type = self._get_layer_type()
+        Activation = self._get_activation_type()
+
+        layer_sizes = list(zip(hidden_dims[:-1], hidden_dims[1:]))
+        layers = [
+            Layer_Type(input_dim,
+                       hidden_dims[0],
+                       device=self.device),
+            Activation(),
+        ]
+
+        for in_size, out_size in layer_sizes:
+            layers.append(Layer_Type(in_size, out_size, device=self.device))
+            layers.append(Activation())
+
+        layers.append(Layer_Type(hidden_dims[-1], output_dim, device=self.device))
+
+        return layers
+
+    def _get_layer_type(self):
+
+        NNModule = importlib.import_module("torch.nn")
+
+        return getattr(NNModule, self.agent_config.layer_type)
+
+    def _get_activation_type(self):
+
+        NNModule = importlib.import_module("torch.nn")
+
+        return getattr(NNModule, self.agent_config.activation)
+
+
+def test_adv_integrity():
+
+    values = np.array([
+        0.72891333,
+        1.72100516,
+        1.74748425,
+        0.58914075,
+        2.21380207,
+        0.92961213,
+        0.45700146,
+        -0.8943487,
+        -0.71089311,
+        1.13792162
+    ])
+    rewards = np.array([
+        0.74076531,
+        0.15569448,
+        1.13257646,
+        0.08365263,
+        -0.32540634,
+        -1.64755961,
+        -0.06796294,
+        0.44458574,
+        -0.96501062,
+        0.57117792
+    ])
+    dones = np.full(10, False)
+    gamma = 0.99
+    gae_lambda = 0.95
+
+    expected_advantages = np.array(
+        [0.38654917,
+         -1.4131823,
+         -1.6777045,
+         -1.7501818,
+         -3.6537561,
+         -2.1635978,
+         -0.04131586,
+         1.4556658,
+         0.8724249,
+         0.])
+    advantages = MAPPO_Trainer.calculate_advantages(None, values, rewards, dones, gamma, gae_lambda)
+
+    np.testing.assert_allclose(advantages, expected_advantages, rtol=1e-3)
