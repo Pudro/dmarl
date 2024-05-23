@@ -23,6 +23,7 @@ from trainers.base import Base_Trainer
 
 
 class Runner:
+
     def __init__(self, config) -> None:
         self.env = self._make_env(config)
         self.env.reset()
@@ -31,27 +32,14 @@ class Runner:
 
         time_string = time.asctime().replace(" ", "").replace(":", "_")
         curr = time.localtime()
-        time_string = (
-            str(curr.tm_year)
-            + "-"
-            + str(curr.tm_mon)
-            + "-"
-            + str(curr.tm_mday)
-            + "_"
-            + str(curr.tm_hour)
-            + ":"
-            + str(curr.tm_min)
-            + ":"
-            + str(curr.tm_sec)
-        )
+        time_string = (str(curr.tm_year) + "-" + str(curr.tm_mon) + "-" + str(curr.tm_mday) + "_" + str(curr.tm_hour) +
+                       ":" + str(curr.tm_min) + ":" + str(curr.tm_sec))
 
         for agent_config in self.config.agents:
             agent_config.model_dir_save = os.path.join(os.getcwd(), agent_config.model_dir_save, time_string)
 
         if self.config.env.logger == "tensorboard":
-            log_dir = os.path.join(
-                os.getcwd(), self.config.env.log_dir, time_string
-            )
+            log_dir = os.path.join(os.getcwd(), self.config.env.log_dir, time_string)
             if not os.path.exists(log_dir):
                 os.makedirs(log_dir)
             self.writer = SummaryWriter(log_dir)
@@ -67,11 +55,8 @@ class Runner:
 
         self.frame_list = []
 
-
         self.trainers = self._make_trainers(self.config)
-        self.all_agent_networks = [
-            nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents
-        ]
+        self.all_agent_networks = [nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents]
         self.episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
         self.last_episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
 
@@ -95,12 +80,9 @@ class Runner:
         for agent_config in config.agents:
             if agent_config.side_name not in self.env.side_names:
                 raise ValueError(
-                    f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}"
-                )
+                    f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}")
 
-            trainers.append(
-                TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env)
-            )
+            trainers.append(TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env))
 
         return trainers
 
@@ -120,12 +102,11 @@ class Runner:
         episode = 0
         global_bar = tqdm(total=self.config.env.running_steps, desc='Global step')
 
-
         while global_step < self.config.env.running_steps:
             cycle = 0
             cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}')
             observations, infos = self.env.reset()
-            while self.env._parallel_env.agents:  # when episode ends, the list is empty
+            while self.env._parallel_env.agents:    # when episode ends, the list is empty
                 actions = self.get_all_actions(observations, infos)
                 (
                     next_observations,
@@ -181,9 +162,9 @@ class Runner:
     def get_all_actions(self, observations, infos) -> dict[str, torch.Tensor]:
 
         return {
-            agent_name: action
-            for trainer in self.trainers
-            for agent_name, action in trainer.get_actions(observations, infos).items()
+            agent_name: action for trainer in self.trainers for agent_name,
+            action in trainer.get_actions(observations,
+                                          infos).items()
         }
 
     def save_video(self, global_step):
@@ -193,7 +174,7 @@ class Runner:
             self.frame_list = []
 
     def add_frame(self):
-        frame = torch.tensor(self.env.render()).permute(2,0,1)
+        frame = torch.tensor(self.env.render()).permute(2, 0, 1)
         self.frame_list.append(frame)
 
     def add_rewards(self, rewards):
@@ -210,9 +191,7 @@ class Runner:
             )
 
         for agent_config in self.config.agents:
-            side_average_returns = np.mean([
-                r for a, r in self.episodic_returns.items() if agent_config.side_name in a
-            ])
+            side_average_returns = np.mean([r for a, r in self.episodic_returns.items() if agent_config.side_name in a])
             self.writer.add_scalar(
                 f"average_episodic_returns/{agent_config.side_name}",
                 side_average_returns,

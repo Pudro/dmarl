@@ -6,6 +6,7 @@ from supersuit import black_death_v3
 
 
 class MAgentEnv(ParallelEnv):
+
     def __init__(self, env_id: str, seed: int, **kwargs) -> None:
         scenario = importlib.import_module("environments." + env_id)
 
@@ -18,17 +19,15 @@ class MAgentEnv(ParallelEnv):
         self.observation_spaces = {}
         for k in self.env.agents:
             obs_space = self.env.observation_spaces[k]
-            self.observation_spaces.update(
-                {
-                    k: Box(
-                        np.min(obs_space.low),
-                        np.max(obs_space.high),
-                        [np.prod(obs_space.shape)],
-                        obs_space.dtype,
-                        seed,
-                    )
-                }
-            )
+            self.observation_spaces.update({
+                k: Box(
+                    np.min(obs_space.low),
+                    np.max(obs_space.high),
+                    [np.prod(obs_space.shape)],
+                    obs_space.dtype,
+                    seed,
+                )
+            })
         self.action_spaces = {k: self.env.action_spaces[k] for k in self.env.agents}
         self.agents = self.env.agents
         self._parallel_env = self.env
@@ -56,7 +55,10 @@ class MAgentEnv(ParallelEnv):
         return observations, infos
 
     def step(self, actions):
-        actions = {agent_name: action_tensor.cpu() for agent_name, action_tensor in actions.items()}
+        actions = {
+            agent_name: action_tensor.cpu() for agent_name,
+            action_tensor in actions.items() if agent_name in self.action_spaces.keys()
+        }
         observations, rewards, terminations, truncations, infos = self.env.step(actions)
         for k, v in rewards.items():
             self.individual_episode_reward[k] += v

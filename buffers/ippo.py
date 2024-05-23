@@ -4,6 +4,7 @@ from typing import Union, NamedTuple, Generator, Optional
 import numpy as np
 import torch
 
+
 class IPPO_Buffer(BaseBuffer):
     observations: np.ndarray
     actions: np.ndarray
@@ -19,7 +20,8 @@ class IPPO_Buffer(BaseBuffer):
         buffer_size: int,
         observation_space: spaces.Space,
         action_space: spaces.Space,
-        device: Union[torch.device, str] = "auto",
+        device: Union[torch.device,
+                      str] = "auto",
         gae_lambda: float = 1,
         gamma: float = 0.99,
         n_envs: int = 1,
@@ -99,6 +101,7 @@ class IPPO_Buffer(BaseBuffer):
 
     def _get_samples(self):
         pass
+
 
 class IPPO_Buffer_Samples(NamedTuple):
     observations: torch.Tensor

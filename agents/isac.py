@@ -11,6 +11,7 @@ import torch.nn.functional as F
 
 
 class ISAC_Agent(Base_Agent):
+
     def __init__(
         self,
         agent_config: Namespace,
@@ -40,11 +41,12 @@ class ISAC_Agent(Base_Agent):
         del self.network
         del self.optimizer
 
-        self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
+        self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()),
+                                      lr=self.agent_config.learning_rate,
+                                      eps=1e-5)
         self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
 
         self.to(self.device)
-
 
     def get_action_probs(self, observations):
         logits = self.actor(observations)

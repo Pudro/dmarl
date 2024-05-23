@@ -11,6 +11,7 @@ from stable_baselines3.common.buffers import ReplayBuffer
 
 
 class Base_Agent(torch.nn.Module):
+
     def __init__(
         self,
         agent_config: Namespace,
@@ -27,7 +28,7 @@ class Base_Agent(torch.nn.Module):
     def build_network(self):
         # TODO: make this work for RNNs
         # currently only Linear layers allowed
-        
+
         input_dim = np.array(self.env.observation_spaces[self.agent_name].shape).prod()
         hidden_dims = self.agent_config.hidden_layers
         output_dim = self.env.action_spaces[self.agent_name].n
@@ -57,7 +58,9 @@ class Base_Agent(torch.nn.Module):
 
         layer_sizes = list(zip(hidden_dims[:-1], hidden_dims[1:]))
         layers = [
-            Layer_Type(input_dim, hidden_dims[0], device=self.device),
+            Layer_Type(input_dim,
+                       hidden_dims[0],
+                       device=self.device),
             Activation(),
         ]
 
