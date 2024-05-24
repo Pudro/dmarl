@@ -140,6 +140,9 @@ class IPPO_Trainer(Base_Trainer):
             explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
 
             nn_agent.rb.clear_memory()
+            if hasattr(self.agent_config, 'entropy_coef_decay_type'):
+                self.decay_entropy_coef(global_step, infos)
+            print('entropy_coef:', self.agent_config.entropy_coef)
 
             if global_step % 1 == 0:
                 writer.add_scalar(f"total_loss/{nn_agent.agent_name}", total_loss, global_step)
@@ -242,6 +245,15 @@ class IPPO_Trainer(Base_Trainer):
             advantages[t] = lastgaelam = delta + gamma * gae_lambda * nextnonterminal * lastgaelam
 
         return advantages
+
+    def decay_entropy_coef(self, global_step, infos):
+        decay_function = self._get_decay_function(self.agent_config.entropy_coef_decay_type)
+        self.agent_config.entropy_coef = decay_function(global_step,
+                                                        infos,
+                                                        self.agent_config.entropy_coef_start,
+                                                        self.agent_config.entropy_coef_end,
+                                                        self.agent_config.entropy_coef_steps,
+                                                        self.agent_config.entropy_coef_rate)
 
 
 def test_adv_integrity():
