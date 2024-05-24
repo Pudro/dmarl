@@ -34,7 +34,7 @@ class MAPPO_Agent(Base_Agent):
 
         del self.network
 
-        self.rb = PPOMemory(self.agent_config.batch_size)
+        self.rb = PPOMemory(env, agent_config)
 
         self.actor_optimizer = optim.Adam(self.actor_net.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
 
