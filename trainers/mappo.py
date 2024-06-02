@@ -24,7 +24,9 @@ class MAPPO_Trainer(Base_Trainer):
         super().__init__(agent_config, env)
 
         # create value network here
-        input_dim = np.array(self.env.state_space.shape).prod()
+        # input_dim = np.array(self.env.state_space.shape).prod()
+        # input_dim changed to stacked agent observations instead of state()
+        input_dim = np.array(self.nn_agents[0].actor_net[0].in_features * len(self.nn_agents))
         hidden_dims = self.agent_config.hidden_layers
         output_dim = 1    # value estimation
         critic_layers = self._get_network_layers(input_dim, hidden_dims, output_dim)
@@ -43,11 +45,16 @@ class MAPPO_Trainer(Base_Trainer):
     def get_actions(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
         for nn_agent in self.nn_agents:
+            stacked_obs = [
+                torch.tensor(v).flatten().to(self.agent_config.device) for k,
+                v in observations.items() if self.agent_config.side_name in k
+            ]
+            stacked_obs = torch.cat(stacked_obs)
             action_fut = torch.jit.fork(
                 nn_agent.choose_action,
                 torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
-                torch.tensor(self.env.state().flatten()).to(self.agent_config.device),
-            )
+            # torch.tensor(self.env.state().flatten()).to(self.agent_config.device),
+                stacked_obs)
 
             action_futures[nn_agent.agent_name] = action_fut
 
@@ -107,7 +114,8 @@ class MAPPO_Trainer(Base_Trainer):
 
                     entropy = dist.entropy()
                     entropy_loss = entropy.mean()
-                    critic_value = nn_agent.critic(torch.tensor(self.env.state().flatten()).to(self.agent_config.device))
+                    # critic_value = nn_agent.critic(torch.tensor(self.env.state().flatten()).to(self.agent_config.device))
+                    critic_value = nn_agent.critic(stacked_obs)
                     critic_value = torch.squeeze(critic_value)
                     new_probs = dist.log_prob(actions)
                     # prob_ratio = new_probs.exp() / old_probs.exp()
@@ -180,17 +188,24 @@ class MAPPO_Trainer(Base_Trainer):
             prob = actions['all'][nn_agent.agent_name][1]
             val = actions['all'][nn_agent.agent_name][2]
             rb_futures.append(
-                torch.jit.fork(nn_agent.rb.store_memory,
-                               observations[nn_agent.agent_name],
-                               actions[nn_agent.agent_name].cpu(),
-                               prob,
-                               val,
-                               np.array(rewards[nn_agent.agent_name]),
-                               terminations[nn_agent.agent_name]))
+                torch.jit.fork(
+                    nn_agent.rb.store_memory,
+                    observations[nn_agent.agent_name],
+            # stacked_obs.cpu(),  # store all observations
+                    actions[nn_agent.agent_name].cpu(),
+                    prob,
+                    val,
+                    np.array(rewards[nn_agent.agent_name]),
+                    terminations[nn_agent.agent_name]))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
 
+        stacked_obs = [
+            torch.tensor(v).flatten().to(self.agent_config.device) for k,
+            v in observations.items() if self.agent_config.side_name in k
+        ]
+        stacked_obs = torch.cat(stacked_obs)
         if global_step % self.agent_config.buffer_size == 0:
             update_futures = []
             for nn_agent in self.nn_agents:

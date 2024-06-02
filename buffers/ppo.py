@@ -9,6 +9,8 @@ class PPOMemory:
         self.batch_size = agent_config.batch_size
         self.buffer_size = agent_config.buffer_size
         self.obs_shape = env.observation_space(self.agent_config.side_name + '_0').shape
+        # agent_count = len([0 for a in self.env.agents if self.agent_config.side_name in a])
+        # self.obs_shape = np.prod(env.observation_space(self.agent_config.side_name + '_0').shape) * agent_count
         self.action_dim = env.action_space(self.agent_config.side_name + '_0').shape
         self.idx = 0
 
