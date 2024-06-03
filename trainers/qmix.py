@@ -13,6 +13,7 @@ import torch.optim as optim
 
 
 class QMIX_Trainer(Base_Trainer):
+
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
@@ -26,33 +27,22 @@ class QMIX_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-
     def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         action_futures = {}
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
+                action_fut = torch.jit.fork(lambda: torch.tensor(self.env.action_space(nn_agent.agent_name).sample()))
             else:
                 action_fut = torch.jit.fork(
                     torch.argmax,
-                    nn_agent(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
-                    ),
-                    # dim=0,
+                    nn_agent(torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
+                            ),
+                # dim=0,
                 )
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        actions = {
-            agent_name: torch.jit.wait(fut)
-            for agent_name, fut in action_futures.items()
-        }
+        actions = {agent_name: torch.jit.wait(fut) for agent_name, fut in action_futures.items()}
 
         return actions
 
@@ -78,18 +68,23 @@ class QMIX_Trainer(Base_Trainer):
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
-                )
-            )
+                ))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
 
         if global_step > self.agent_config.learning_start:
             if global_step % self.agent_config.train_period == 0:
-                agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size)).to(self.agent_config.device)
-                target_agent_q_maxes = torch.zeros((len(self.nn_agents), self.agent_config.batch_size)).to(self.agent_config.device)
-                batch_rewards = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1)).to(self.agent_config.device)
-                batch_dones = torch.zeros((len(self.nn_agents), self.agent_config.batch_size, 1)).to(self.agent_config.device)
+                agent_q_maxes = torch.zeros((len(self.nn_agents),
+                                             self.agent_config.batch_size)).to(self.agent_config.device)
+                target_agent_q_maxes = torch.zeros((len(self.nn_agents),
+                                                    self.agent_config.batch_size)).to(self.agent_config.device)
+                batch_rewards = torch.zeros((len(self.nn_agents),
+                                             self.agent_config.batch_size,
+                                             1)).to(self.agent_config.device)
+                batch_dones = torch.zeros((len(self.nn_agents),
+                                           self.agent_config.batch_size,
+                                           1)).to(self.agent_config.device)
                 for i, nn_agent in enumerate(self.nn_agents):
                     data = nn_agent.rb.sample(self.agent_config.batch_size)
                     with torch.no_grad():
@@ -112,22 +107,22 @@ class QMIX_Trainer(Base_Trainer):
                         global_step,
                     )
 
-
-
                 # update mixer network
                 q_tot = self.qmixer(agent_q_maxes, torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
                 with torch.no_grad():
-                    target_q_tot = self.target_qmixer(target_agent_q_maxes, torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
+                    target_q_tot = self.target_qmixer(
+                        target_agent_q_maxes,
+                        torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
                 # batch_rewards = batch_rewards.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
                 # batch_dones = batch_dones.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
                 # Calculate 1-step Q-Learning targets
-                r = batch_rewards.permute(1,0,2).sum(dim=1, keepdim=True)
-                d = batch_dones.permute(1,0,2).sum(dim=1, keepdim=True)
+                r = batch_rewards.permute(1, 0, 2).sum(dim=1, keepdim=True)
+                d = batch_dones.permute(1, 0, 2).sum(dim=1, keepdim=True)
                 targets = r + self.agent_config.gamma * (1 - d) * target_q_tot
                 # Td-error
                 td_error = (q_tot - targets.detach())
 
-                loss = (td_error ** 2).sum()
+                loss = (td_error**2).sum()
 
                 # Optimise
                 self.qmixer.optimizer.zero_grad()
@@ -161,19 +156,15 @@ class QMIX_Trainer(Base_Trainer):
                 for target_network_param, q_network_param in zip(
                     self.target_qmixer.parameters(), self.qmixer.parameters()
                 ):
-                    target_network_param.data.copy_(
-                        self.agent_config.tau * q_network_param.data
-                        + (1.0 - self.agent_config.tau) * target_network_param.data
-                    )
+                    target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
+                                                    (1.0 - self.agent_config.tau) * target_network_param.data)
 
                 for nn_agent in self.nn_agents:
                     for target_network_param, q_network_param in zip(
                         nn_agent.target_network.parameters(), nn_agent.parameters()
                     ):
-                        target_network_param.data.copy_(
-                            self.agent_config.tau * q_network_param.data
-                            + (1.0 - self.agent_config.tau) * target_network_param.data
-                            )
+                        target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
+                                                        (1.0 - self.agent_config.tau) * target_network_param.data)
 
     def save_agents(self, checkpoint=None):
 
@@ -184,22 +175,34 @@ class QMIX_Trainer(Base_Trainer):
         if (not os.path.exists(save_path)) and (not self.agent_config.test_mode):
             os.makedirs(save_path)
 
-        for nn_agent in self.nn_agents:
-            torch.save(
-                {
-                    "agent_config": nn_agent.agent_config,
-                    "agent_name": nn_agent.agent_name,
-                    "network_state_dict": nn_agent.network.state_dict(),
-                    "target_network_state_dict": nn_agent.target_network.state_dict(),
-                    "optimizer_state_dict": nn_agent.optimizer.state_dict(),
-                    # these should be saved in one separate file
-                    "qmixer_state_dict": self.qmixer.state_dict(),
-                    "target_qmixer_state_dict": self.target_qmixer.state_dict(),
-                    "qmixer_optimizer_state_dict": self.qmixer.optimizer.state_dict(),
-                    "target_qmixer_optimizer_state_dict": self.target_qmixer.optimizer.state_dict()
-                },
-                save_path + f"/{nn_agent.agent_name}.tar",
-            )
+        for i, nn_agent in enumerate(self.nn_agents):
+            if i == 0:
+                torch.save(
+                    {
+                        "agent_config": nn_agent.agent_config,
+                        "agent_name": nn_agent.agent_name,
+                        "network_state_dict": nn_agent.network.state_dict(),
+                        "target_network_state_dict": nn_agent.target_network.state_dict(),
+                        "optimizer_state_dict": nn_agent.optimizer.state_dict(),
+                # these should be saved in one separate file
+                        "qmixer_state_dict": self.qmixer.state_dict(),
+                        "target_qmixer_state_dict": self.target_qmixer.state_dict(),
+                        "qmixer_optimizer_state_dict": self.qmixer.optimizer.state_dict(),
+                        "target_qmixer_optimizer_state_dict": self.target_qmixer.optimizer.state_dict()
+                    },
+                    save_path + f"/{nn_agent.agent_name}.tar",
+                )
+            else:
+                torch.save(
+                    {
+                        "agent_config": nn_agent.agent_config,
+                        "agent_name": nn_agent.agent_name,
+                        "network_state_dict": nn_agent.network.state_dict(),
+                        "target_network_state_dict": nn_agent.target_network.state_dict(),
+                        "optimizer_state_dict": nn_agent.optimizer.state_dict(),
+                    },
+                    save_path + f"/{nn_agent.agent_name}.tar",
+                )
 
     def load_agents(self):
         all_files = os.listdir(self.agent_config.model_dir_load)
@@ -209,26 +212,36 @@ class QMIX_Trainer(Base_Trainer):
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
         if len(model_files) < len(self.nn_agents):
-            raise Exception(
-                f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"
-            )
+            raise Exception(f"Model directory {self.agent_config.model_dir_load} has fewer files than needed")
 
         for i, (nn_agent, file_name) in enumerate(zip(self.nn_agents, model_files)):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
             model_tar = torch.load(model_path, map_location=self.agent_config.device)
 
-            if i == 0: # load qmixers
+            if i == 0 and hasattr(model_tar, 'qmixer_state_dict'):    # load qmixers
                 # load matching weights only
                 qmixer_dict = self.qmixer.state_dict()
-                qmixer_dict.update({k: v for k, v in model_tar["qmixer_state_dict"].items() if k in qmixer_dict and v.size() == qmixer_dict[k].size()})
+                qmixer_dict.update({
+                    k: v
+                    for k,
+                    v in model_tar["qmixer_state_dict"].items()
+                    if k in qmixer_dict and v.size() == qmixer_dict[k].size()
+                })
                 self.qmixer.load_state_dict(qmixer_dict)
 
                 target_qmixer_dict = self.target_qmixer.state_dict()
-                target_qmixer_dict.update({k: v for k, v in model_tar["target_qmixer_state_dict"].items() if k in target_qmixer_dict and v.size() == target_qmixer_dict[k].size()})
+                target_qmixer_dict.update({
+                    k: v
+                    for k,
+                    v in model_tar["target_qmixer_state_dict"].items()
+                    if k in target_qmixer_dict and v.size() == target_qmixer_dict[k].size()
+                })
                 self.target_qmixer.load_state_dict(target_qmixer_dict)
 
                 if not self.agent_config.reset_optimizer:
-                    print("Loading optimizer state_dict with different parameters not supported. Optimizer params are stored as an ordered list and loading right params only is hard.")
+                    print(
+                        "Loading optimizer state_dict with different parameters not supported. Optimizer params are stored as an ordered list and loading right params only is hard."
+                    )
                     # qmixer_optimizer_dict = self.qmixer.optimizer.state_dict()
                     # qmixer_optimizer_dict.update({k: v for k, v in model_tar["qmixer_optimizer_state_dict"].items() if k in qmixer_optimizer_dict and v.size() == qmixer_optimizer_dict[k].size()})
                     # self.qmixer.optimizer.load_state_dict(qmixer_optimizer_dict)
@@ -237,15 +250,12 @@ class QMIX_Trainer(Base_Trainer):
                     # target_qmixer_optimizer_dict.update({k: v for k, v in model_tar["target_qmixer_optimizer_state_dict"].items() if k in target_qmixer_optimizer_dict and v.size() == target_qmixer_optimizer_dict[k].size()})
                     # self.target_qmixer.optimizer.load_state_dict(target_qmixer_optimizer_dict)
 
-
                 self.qmixer.to(self.agent_config.device)
                 self.target_qmixer.to(self.agent_config.device)
 
             nn_agent.network.load_state_dict(model_tar["network_state_dict"])
             if not self.agent_config.load_policy_only:
-                nn_agent.target_network.load_state_dict(
-                    model_tar["target_network_state_dict"]
-                )
+                nn_agent.target_network.load_state_dict(model_tar["target_network_state_dict"])
 
             if not self.agent_config.reset_optimizer:
                 nn_agent.optimizer.load_state_dict(model_tar["optimizer_state_dict"])
@@ -254,6 +264,7 @@ class QMIX_Trainer(Base_Trainer):
 
 
 class QMixer(nn.Module):
+
     def __init__(self, agent_config, trainer):
         super(QMixer, self).__init__()
 
@@ -274,28 +285,29 @@ class QMixer(nn.Module):
         hypernet_embed_dim = self.agent_config.hypernet_embed_dim
         self.action_dim = trainer.env.action_spaces[f'{agent_config.side_name}_0'].n
 
-        self.hyper_w_1 = nn.Sequential(nn.Linear(self.state_dim, hypernet_embed_dim),
+        self.hyper_w_1 = nn.Sequential(nn.Linear(self.state_dim,
+                                                 hypernet_embed_dim),
                                        nn.ReLU(),
-                                       nn.Linear(hypernet_embed_dim, self.embed_dim * len(trainer.nn_agents)))
+                                       nn.Linear(hypernet_embed_dim,
+                                                 self.embed_dim * len(trainer.nn_agents)))
 
-        self.hyper_w_final = nn.Sequential(nn.Linear(self.state_dim, hypernet_embed_dim),
-                                       nn.ReLU(),
-                                       nn.Linear(hypernet_embed_dim, self.embed_dim))
+        self.hyper_w_final = nn.Sequential(nn.Linear(self.state_dim,
+                                                     hypernet_embed_dim),
+                                           nn.ReLU(),
+                                           nn.Linear(hypernet_embed_dim,
+                                                     self.embed_dim))
 
         # State dependent bias for hidden layer
         self.hyper_b_1 = nn.Linear(self.state_dim, self.embed_dim)
 
         # V(s) instead of a bias for the last layers
-        self.V = nn.Sequential(nn.Linear(self.state_dim, self.embed_dim),
-                               nn.ReLU(),
-                               nn.Linear(self.embed_dim, 1))
+        self.V = nn.Sequential(nn.Linear(self.state_dim, self.embed_dim), nn.ReLU(), nn.Linear(self.embed_dim, 1))
 
         self.optimizer = optim.Adam(self.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
         self.to(self.agent_config.device)
 
-
     def forward(self, agent_qs, state):
-        agent_qs = agent_qs.permute(1,0)
+        agent_qs = agent_qs.permute(1, 0)
         bs = agent_qs.size(0)
         n_agents = agent_qs.size(1)
         state = state.flatten()
