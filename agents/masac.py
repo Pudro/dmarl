@@ -8,9 +8,12 @@ import os
 import copy
 import torch.optim as optim
 import torch.nn.functional as F
+from buffers.qmix import QMIX_Buffer
+import numpy as np
 
 
 class MASAC_Agent(Base_Agent):
+
     def __init__(
         self,
         agent_config: Namespace,
@@ -40,7 +43,18 @@ class MASAC_Agent(Base_Agent):
         del self.network
         del self.optimizer
 
-        self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
+        self.rb = QMIX_Buffer(
+            self.agent_config.buffer_size,
+            self.env.observation_spaces[self.agent_name],
+            self.env.action_spaces[self.agent_name],
+            np.prod(self.env.state_space.shape),
+            str(self.device),
+            handle_timeout_termination=False,
+        )
+
+        self.q_optimizer = optim.Adam(list(self.qf1.parameters()) + list(self.qf2.parameters()),
+                                      lr=self.agent_config.learning_rate,
+                                      eps=1e-5)
         self.actor_optimizer = optim.Adam(list(self.actor.parameters()), lr=self.agent_config.learning_rate, eps=1e-5)
 
         self.to(self.device)

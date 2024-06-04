@@ -53,7 +53,8 @@ class MAPPO_Agent(Base_Agent):
 
     def choose_action(self, observation, state):
         dist = self.actor(observation)
-        value = self.critic(state)
+        cat_state = torch.cat([observation, state])
+        value = self.critic(cat_state)
         action = dist.sample()
 
         probs = torch.squeeze(dist.log_prob(action)).item()

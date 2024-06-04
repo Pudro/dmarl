@@ -24,6 +24,8 @@ class MASAC_Trainer(Base_Trainer):
         self.qmixer = QMixer(self.agent_config, self)
         self.target_qmixer = QMixer(self.agent_config, self)
 
+        self.prev_state = self.env.state()
+
         if self.agent_config.model_dir_load:
             self.load_agents()
 
@@ -59,15 +61,15 @@ class MASAC_Trainer(Base_Trainer):
         rb_futures = []
         for nn_agent in self.nn_agents:
             rb_futures.append(
-                torch.jit.fork(
-                    nn_agent.rb.add,
-                    observations[nn_agent.agent_name],
-                    next_observations[nn_agent.agent_name],
-                    actions[nn_agent.agent_name].cpu(),
-                    np.array(rewards[nn_agent.agent_name]),
-                    np.array(terminations[nn_agent.agent_name]),
-                    infos[nn_agent.agent_name],
-                ))
+                torch.jit.fork(nn_agent.rb.add,
+                               observations[nn_agent.agent_name],
+                               next_observations[nn_agent.agent_name],
+                               actions[nn_agent.agent_name].cpu(),
+                               np.array(rewards[nn_agent.agent_name]),
+                               np.array(terminations[nn_agent.agent_name]),
+                               infos[nn_agent.agent_name],
+                               self.prev_state.flatten(),
+                               self.env.state().flatten()))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -131,11 +133,11 @@ class MASAC_Trainer(Base_Trainer):
                     nn_agent.actor_optimizer.step()
 
                 # update mixer network
-                q_tot = self.qmixer(agent_q_maxes, torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
+                state = data.states
+                next_state = data.next_states
+                q_tot = self.qmixer(agent_q_maxes, state)
                 with torch.no_grad():
-                    target_q_tot = self.target_qmixer(
-                        target_agent_q_maxes,
-                        torch.tensor(self.env.state()).to(self.agent_config.device).flatten())
+                    target_q_tot = self.target_qmixer(target_agent_q_maxes, next_state)
                 # batch_rewards = batch_rewards.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
                 # batch_dones = batch_dones.contiguous().view(self.agent_config.batch_size, len(self.nn_agents), 1)
                 # Calculate 1-step Q-Learning targets
@@ -193,6 +195,8 @@ class MASAC_Trainer(Base_Trainer):
                     ):
                         target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
                                                         (1.0 - self.agent_config.tau) * target_network_param.data)
+
+        self.prev_state = self.env.state()
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
@@ -338,23 +342,24 @@ class QMixer(nn.Module):
         self.optimizer = optim.Adam(self.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
         self.to(self.agent_config.device)
 
-    def forward(self, agent_qs, state):
+    def forward(self, agent_qs, states):
         agent_qs = agent_qs.permute(1, 0)
         bs = agent_qs.size(0)
         n_agents = agent_qs.size(1)
-        state = state.flatten()
+        agent_qs = agent_qs.view(-1, 1, self.n_agents)
         # agent_qs = agent_qs.contiguous().permute(1,0,2) # this might introduce a bug - we want this tensor to be batch invariant, otherwise the net might not transfer well?
         # First layer
-        w1 = torch.abs(self.hyper_w_1(state))
-        b1 = self.hyper_b_1(state)
-        w1 = w1.view(n_agents, self.embed_dim)
-        b1 = b1.view(1, self.embed_dim)
+        w1 = torch.abs(self.hyper_w_1(states))
+        b1 = self.hyper_b_1(states)
+        # w1 = w1.view(n_agents, self.embed_dim)
+        w1 = w1.view(-1, self.n_agents, self.embed_dim)
+        b1 = b1.view(-1, 1, self.embed_dim)
         hidden = F.elu((agent_qs @ w1) + b1)
         # Second layer
-        w_final = torch.abs(self.hyper_w_final(state))
+        w_final = torch.abs(self.hyper_w_final(states))
         w_final = w_final.view(-1, self.embed_dim, 1)
         # State-dependent bias
-        v = self.V(state).view(-1, 1, 1)
+        v = self.V(states).view(-1, 1, 1)
         # Compute final output
         y = (hidden @ w_final) + v
         # Reshape and return
