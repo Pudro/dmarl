@@ -1,7 +1,7 @@
 import numpy as np
 
 
-class PPOMemory:
+class MAPPO_Buffer:
 
     def __init__(self, env, agent_config):
         self.env = env

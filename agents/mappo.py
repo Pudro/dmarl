@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.distributions.categorical import Categorical
 from stable_baselines3.common.buffers import RolloutBuffer
-from buffers import PPOMemory
+from buffers import MAPPO_Buffer
 
 
 class MAPPO_Agent(Base_Agent):
@@ -34,7 +34,7 @@ class MAPPO_Agent(Base_Agent):
 
         del self.network
 
-        self.rb = PPOMemory(env, agent_config)
+        self.rb = MAPPO_Buffer(env, agent_config)
 
         self.actor_optimizer = optim.Adam(self.actor_net.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
 

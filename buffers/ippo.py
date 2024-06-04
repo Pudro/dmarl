@@ -1,114 +1,50 @@
-from stable_baselines3.common.buffers import BaseBuffer
-from gymnasium import spaces
-from typing import Union, NamedTuple, Generator, Optional
 import numpy as np
-import torch
 
 
-class IPPO_Buffer(BaseBuffer):
-    observations: np.ndarray
-    actions: np.ndarray
-    rewards: np.ndarray
-    advantages: np.ndarray
-    returns: np.ndarray
-    episode_numbers: np.ndarray
-    log_probs: np.ndarray
-    values: np.ndarray
+class IPPO_Buffer:
 
-    def __init__(
-        self,
-        buffer_size: int,
-        observation_space: spaces.Space,
-        action_space: spaces.Space,
-        device: Union[torch.device,
-                      str] = "auto",
-        gae_lambda: float = 1,
-        gamma: float = 0.99,
-        n_envs: int = 1,
-    ):
-        super().__init__(buffer_size, observation_space, action_space, device, n_envs=n_envs)
-        self.gae_lambda = gae_lambda
-        self.gamma = gamma
-        self.generator_ready = False
-        self.reset()
+    def __init__(self, env, agent_config):
+        self.env = env
+        self.agent_config = agent_config
+        self.batch_size = agent_config.batch_size
+        self.buffer_size = agent_config.buffer_size
+        self.obs_shape = env.observation_space(self.agent_config.side_name + '_0').shape
+        # agent_count = len([0 for a in self.env.agents if self.agent_config.side_name in a])
+        # self.obs_shape = np.prod(env.observation_space(self.agent_config.side_name + '_0').shape) * agent_count
+        self.action_dim = env.action_space(self.agent_config.side_name + '_0').shape
+        self.idx = 0
 
-    def reset(self) -> None:
-        self.observations = np.zeros((self.buffer_size, self.n_envs, *self.obs_shape), dtype=np.float32)
-        self.actions = np.zeros((self.buffer_size, self.n_envs, self.action_dim), dtype=np.float32)
-        self.rewards = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.episode_numbers = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.values = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.log_probs = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.advantages = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        self.returns = np.zeros((self.buffer_size, self.n_envs), dtype=np.float32)
-        super().reset()
+        self.clear_memory()
 
-    def add(
-        self,
-        obs: np.ndarray,
-        action: np.ndarray,
-        reward: np.ndarray,
-        episode_number: np.ndarray,
-        value: torch.Tensor,
-        log_prob: torch.Tensor,
-    ) -> None:
-        """
-        :param obs: Observation
-        :param action: Action
-        :param reward:
-        :param episode_start: Start of episode signal.
-        :param value: estimated value of the current state
-            following the current policy.
-        :param log_prob: log probability of the action
-            following the current policy.
-        """
-        if len(log_prob.shape) == 0:
-            # Reshape 0-d tensor to avoid error
-            log_prob = log_prob.reshape(-1, 1)
+    def generate_batches(self):
+        n_states = len(self.obs)
+        batch_start = np.arange(0, n_states, self.batch_size)
+        indices = np.arange(n_states, dtype=np.int64)
+        np.random.shuffle(indices)
+        batches = [indices[i:i + self.batch_size] for i in batch_start]
 
-        # Reshape needed when using multiple envs with discrete observations
-        # as numpy cannot broadcast (n_discrete,) to (n_discrete, 1)
-        if isinstance(self.observation_space, spaces.Discrete):
-            obs = obs.reshape((self.n_envs, *self.obs_shape))
+        return (np.array(self.obs),
+                np.array(self.actions),
+                np.array(self.probs),
+                np.array(self.vals),
+                np.array(self.rewards),
+                np.array(self.dones),
+                batches)
 
-        # Reshape to handle multi-dim and discrete action spaces, see GH #970 #1392
-        action = action.reshape((self.n_envs, self.action_dim))
+    def store_memory(self, obs, action, probs, vals, reward, done):
+        self.obs[self.idx] = obs
+        self.actions[self.idx] = action
+        self.probs[self.idx] = probs
+        self.vals[self.idx] = vals
+        self.rewards[self.idx] = reward
+        self.dones[self.idx] = done
+        self.idx += 1
 
-        self.observations[self.pos] = np.array(obs).copy()
-        self.actions[self.pos] = np.array(action).copy()
-        self.rewards[self.pos] = np.array(reward).copy()
-        self.episode_numbers[self.pos] = np.array(episode_number).copy()
-        self.values[self.pos] = value.clone().cpu().numpy().flatten()
-        self.log_probs[self.pos] = log_prob.clone().cpu().numpy()
-        self.pos += 1
-        if self.pos == self.buffer_size:
-            self.full = True
-
-    def sample(self) -> NamedTuple:
-        data = (
-            self.observations[:,0,:],
-            self.actions[:,0,:],
-            self.rewards,
-            self.episode_numbers,
-            self.log_probs,
-            self.values,
-            self.advantages,
-            self.returns
-        )
-
-        self.reset()
-        return IPPO_Buffer_Samples(*tuple(map(self.to_torch, data)))
-
-    def _get_samples(self):
-        pass
-
-
-class IPPO_Buffer_Samples(NamedTuple):
-    observations: torch.Tensor
-    actions: torch.Tensor
-    rewards: torch.Tensor
-    episode_numbers: torch.Tensor
-    log_probs: torch.Tensor
-    values: torch.Tensor
-    advantages: torch.Tensor
-    returns: torch.Tensor
+    def clear_memory(self):
+        self.obs = np.zeros((self.buffer_size, np.prod(self.obs_shape)), dtype=np.float32)
+        self.actions = np.zeros(self.buffer_size, dtype=np.float32)    # only one action possible
+        self.vals = np.zeros(self.buffer_size, dtype=np.float32)
+        self.probs = np.zeros(self.buffer_size, dtype=np.float32)
+        self.rewards = np.zeros(self.buffer_size, dtype=np.float32)
+        self.dones = np.zeros(self.buffer_size, dtype=np.float32)
+        self.idx = 0

@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.distributions.categorical import Categorical
 from stable_baselines3.common.buffers import RolloutBuffer
-from buffers import PPOMemory
+from buffers import IPPO_Buffer
 
 
 class IPPO_Agent(Base_Agent):
@@ -40,7 +40,7 @@ class IPPO_Agent(Base_Agent):
 
         del self.network
 
-        self.rb = PPOMemory(self.env, self.agent_config)
+        self.rb = IPPO_Buffer(self.env, self.agent_config)
 
         self.actor_optimizer = optim.Adam(self.actor_net.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)
         self.critic_optimizer = optim.Adam(self.critic_net.parameters(), lr=self.agent_config.learning_rate, eps=1e-5)

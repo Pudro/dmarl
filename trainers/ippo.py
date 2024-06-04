@@ -1,5 +1,4 @@
 from agents.ippo import IPPO_Agent
-from buffers.ippo import IPPO_Buffer_Samples
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
@@ -40,7 +39,7 @@ class IPPO_Trainer(Base_Trainer):
             tup in result_tuples.items()
         }
         # ugly hack to get actions, probs and values all through runner back to trainer
-        actions['all'] = result_tuples
+        actions.setdefault(self.side_name, {}).update(result_tuples)
 
         return actions
 
@@ -160,8 +159,9 @@ class IPPO_Trainer(Base_Trainer):
 
         rb_futures = []
         for nn_agent in self.nn_agents:
-            prob = actions['all'][nn_agent.agent_name][1]
-            val = actions['all'][nn_agent.agent_name][2]
+            breakpoint()
+            prob = actions[self.side_name][nn_agent.agent_name][1]
+            val = actions[self.side_name][nn_agent.agent_name][2]
             rb_futures.append(
                 torch.jit.fork(nn_agent.rb.store_memory,
                                observations[nn_agent.agent_name],
