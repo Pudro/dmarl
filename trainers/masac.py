@@ -95,7 +95,7 @@ class MASAC_Trainer(Base_Trainer):
                         qf2_next_target = nn_agent.target_qf2(data.next_observations)
                         min_qf_next_target = next_state_action_porbs * (torch.min(qf1_next_target,
                                                                                   qf2_next_target) -
-                                                                        nn_agent.agent_config.alpha * next_state_log_pi)
+                                                                        self.agent_config.alpha * next_state_log_pi)
                         min_qf_next_target = min_qf_next_target.sum(dim=1)
                         next_q_value = data.rewards.flatten() + (
                             1 - data.dones.flatten()) * nn_agent.agent_config.gamma * (min_qf_next_target)
@@ -126,7 +126,7 @@ class MASAC_Trainer(Base_Trainer):
                         qf2_values = nn_agent.qf2(data.observations)
                         min_qf_values = torch.min(qf1_values, qf2_values)
                     # no need for reparameterization, the expectation can be calculated for discrete actions
-                    actor_loss = (action_probs * ((nn_agent.agent_config.alpha * log_pi) - min_qf_values)).mean()
+                    actor_loss = (action_probs * ((self.agent_config.alpha * log_pi) - min_qf_values)).mean()
 
                     nn_agent.actor_optimizer.zero_grad()
                     actor_loss.backward()
@@ -167,6 +167,7 @@ class MASAC_Trainer(Base_Trainer):
                     nn_agent.q_optimizer.step()
 
                 self.greedy_decay(global_step, infos)
+                self.decay_alpha(global_step, infos)
 
                 for nn_agent in self.nn_agents:
                     if global_step % 1 == 0:
@@ -197,6 +198,15 @@ class MASAC_Trainer(Base_Trainer):
                                                         (1.0 - self.agent_config.tau) * target_network_param.data)
 
         self.prev_state = self.env.state()
+
+    def decay_alpha(self, global_step, infos):
+        decay_function = self._get_decay_function(self.agent_config.alpha_decay_type)
+        self.agent_config.alpha = decay_function(global_step,
+                                                        infos,
+                                                        self.agent_config.alpha_start,
+                                                        self.agent_config.alpha_end,
+                                                        self.agent_config.alpha_steps,
+                                                        self.agent_config.alpha_rate)
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
