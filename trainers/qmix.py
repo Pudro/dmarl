@@ -60,6 +60,10 @@ class QMIX_Trainer(Base_Trainer):
         writer,
     ):
         rb_futures = []
+        curr_state = self.env.state()
+        if curr_state is None:
+            curr_state = self.prev_state
+
         for nn_agent in self.nn_agents:
             rb_futures.append(
                 torch.jit.fork(nn_agent.rb.add,
@@ -70,7 +74,7 @@ class QMIX_Trainer(Base_Trainer):
                                np.array(terminations[nn_agent.agent_name]),
                                infos[nn_agent.agent_name],
                                self.prev_state.flatten(),
-                               self.env.state().flatten()))
+                               curr_state.flatten()))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -168,7 +172,8 @@ class QMIX_Trainer(Base_Trainer):
                         target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
                                                         (1.0 - self.agent_config.tau) * target_network_param.data)
 
-        self.prev_state = self.env.state()
+        if self.env.state() is not None:
+            self.prev_state = self.env.state()
 
     def save_agents(self, checkpoint=None):
 
