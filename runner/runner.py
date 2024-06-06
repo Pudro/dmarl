@@ -121,6 +121,9 @@ class Runner:
                 # TODO: this should be handled by the writer
                 self.add_rewards(rewards)
 
+                if self.env.state() is None:
+                    terminations = {k: True for k in terminations.keys()}
+
                 for trainer in self.trainers:
                     # NOTE: might change so that futures are emited instead of handled inisde
                     if not trainer.agent_config.test_mode:
