@@ -1,7 +1,8 @@
-from agents.base import Base_Agent
-from agents.random import Random_Agent
+from agents import Base_Agent, Random_Agent, Mirror_Agent
 from trainers.base import Base_Trainer
 from trainers.random import Random_Trainer
+
+excluded_agents = (Random_Agent, Mirror_Agent)
 
 
 def get_nn_agent_size(nn_agent: Base_Agent):
@@ -9,7 +10,7 @@ def get_nn_agent_size(nn_agent: Base_Agent):
     buffer_size = 0
 
     print(type(nn_agent))
-    if not isinstance(nn_agent, Random_Agent):
+    if not isinstance(nn_agent, excluded_agents):
         for param in nn_agent.parameters():
             param_size += param.nelement() * param.element_size()
         for buffer in nn_agent.buffers():
@@ -19,7 +20,7 @@ def get_nn_agent_size(nn_agent: Base_Agent):
 
 
 def count_nn_agent_parameters(nn_agent: Base_Agent):
-    if not isinstance(nn_agent, Random_Agent):
+    if not isinstance(nn_agent, excluded_agents):
         return sum(p.numel() for p in nn_agent.parameters())
 
 
@@ -36,22 +37,18 @@ def print_summary(trainer_list: list[Base_Trainer]):
     ]
     data = []
     for trainer in trainer_list:
-        data.append(
-            [
-                trainer.side_name,
-                len(trainer.nn_agents),
-                trainer.algorithm,
-                trainer.agent_config.layer_type,
-                trainer.agent_config.hidden_layers,
-                count_nn_agent_parameters(trainer.nn_agents[0]),
-                f"{get_nn_agent_size(trainer.nn_agents[0])/1024} KB",
-                trainer.agent_config.test_mode,
-            ]
-        )
+        data.append([
+            trainer.side_name,
+            len(trainer.nn_agents),
+            trainer.algorithm,
+            trainer.agent_config.layer_type,
+            trainer.agent_config.hidden_layers,
+            count_nn_agent_parameters(trainer.nn_agents[0]),
+            f"{get_nn_agent_size(trainer.nn_agents[0])/1024} KB",
+            trainer.agent_config.test_mode,
+        ])
 
-    column_widths = [
-        max(len(str(item)) + 2 for item in column) for column in zip(headers, *data)
-    ]
+    column_widths = [max(len(str(item)) + 2 for item in column) for column in zip(headers, *data)]
 
     header_row = [str(item).center(width) for item, width in zip(headers, column_widths)]
     print("|".join(header_row))

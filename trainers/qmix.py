@@ -60,6 +60,10 @@ class QMIX_Trainer(Base_Trainer):
         writer,
     ):
         rb_futures = []
+        curr_state = self.env.state()
+        if curr_state is None:
+            curr_state = self.prev_state
+
         for nn_agent in self.nn_agents:
             rb_futures.append(
                 torch.jit.fork(nn_agent.rb.add,
@@ -70,7 +74,7 @@ class QMIX_Trainer(Base_Trainer):
                                np.array(terminations[nn_agent.agent_name]),
                                infos[nn_agent.agent_name],
                                self.prev_state.flatten(),
-                               self.env.state().flatten()))
+                               curr_state.flatten()))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -168,7 +172,8 @@ class QMIX_Trainer(Base_Trainer):
                         target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
                                                         (1.0 - self.agent_config.tau) * target_network_param.data)
 
-        self.prev_state = self.env.state()
+        if self.env.state() is not None:
+            self.prev_state = self.env.state()
 
     def save_agents(self, checkpoint=None):
 
@@ -243,16 +248,28 @@ class QMIX_Trainer(Base_Trainer):
                 self.target_qmixer.load_state_dict(target_qmixer_dict)
 
                 if not self.agent_config.reset_optimizer:
-                    print(
-                        "Loading optimizer state_dict with different parameters not supported. Optimizer params are stored as an ordered list and loading right params only is hard."
-                    )
-                    # qmixer_optimizer_dict = self.qmixer.optimizer.state_dict()
-                    # qmixer_optimizer_dict.update({k: v for k, v in model_tar["qmixer_optimizer_state_dict"].items() if k in qmixer_optimizer_dict and v.size() == qmixer_optimizer_dict[k].size()})
-                    # self.qmixer.optimizer.load_state_dict(qmixer_optimizer_dict)
+                    try:
+                        qmixer_optimizer_dict = self.qmixer.optimizer.state_dict()
+                        qmixer_optimizer_dict.update({
+                            k: v
+                            for k,
+                            v in model_tar["qmixer_optimizer_state_dict"].items()
+                            if k in qmixer_optimizer_dict and v.size() == qmixer_optimizer_dict[k].size()
+                        })
+                        self.qmixer.optimizer.load_state_dict(qmixer_optimizer_dict)
 
-                    # target_qmixer_optimizer_dict = self.target_qmixer.optimizer.state_dict()
-                    # target_qmixer_optimizer_dict.update({k: v for k, v in model_tar["target_qmixer_optimizer_state_dict"].items() if k in target_qmixer_optimizer_dict and v.size() == target_qmixer_optimizer_dict[k].size()})
-                    # self.target_qmixer.optimizer.load_state_dict(target_qmixer_optimizer_dict)
+                        target_qmixer_optimizer_dict = self.target_qmixer.optimizer.state_dict()
+                        target_qmixer_optimizer_dict.update({
+                            k: v
+                            for k,
+                            v in model_tar["target_qmixer_optimizer_state_dict"].items()
+                            if k in target_qmixer_optimizer_dict and v.size() == target_qmixer_optimizer_dict[k].size()
+                        })
+                        self.target_qmixer.optimizer.load_state_dict(target_qmixer_optimizer_dict)
+                    except:
+                        print(
+                            "Loading optimizer state_dict with different parameters not supported. Optimizer params are stored as an ordered list and loading right params only is hard."
+                        )
 
                 self.qmixer.to(self.agent_config.device)
                 self.target_qmixer.to(self.agent_config.device)

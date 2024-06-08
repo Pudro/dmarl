@@ -6,6 +6,7 @@ from .isac import ISAC_Trainer
 from .masac import MASAC_Trainer
 from .qmix import QMIX_Trainer
 from .random import Random_Trainer
+from .mirror import Mirror_Trainer
 
 TRAINER_REGISTRY = {
     'IQL': IQL_Trainer,
@@ -15,5 +16,6 @@ TRAINER_REGISTRY = {
     'ISAC': ISAC_Trainer,
     'MASAC': MASAC_Trainer,
     'QMIX': QMIX_Trainer,
-    'Random': Random_Trainer
+    'Random': Random_Trainer,
+    'Mirror': Mirror_Trainer
 }

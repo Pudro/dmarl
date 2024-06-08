@@ -18,6 +18,7 @@ import os
 import shutil
 from trainers import TRAINER_REGISTRY
 import torch
+import copy
 
 from trainers.base import Base_Trainer
 
@@ -57,8 +58,8 @@ class Runner:
 
         self.trainers = self._make_trainers(self.config)
         self.all_agent_networks = [nn_agent for trainer in self.trainers for nn_agent in trainer.nn_agents]
-        self.episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
-        self.last_episodic_returns = {nn_agent.agent_name: float('-inf') for nn_agent in self.all_agent_networks}
+        self.episodic_returns = {nn_agent.agent_name: 0.0 for nn_agent in self.all_agent_networks}
+        self.last_episodic_returns = {nn_agent.agent_name: 0.0 for nn_agent in self.all_agent_networks}
 
         print_summary(self.trainers)
         self.run()
@@ -82,7 +83,10 @@ class Runner:
                 raise ValueError(
                     f"Agent side name: '{agent_config.side_name}' does not match the environment: {self.env.side_names}")
 
-            trainers.append(TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env))
+            if agent_config.algorithm == 'Mirror':
+                trainers.append(TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env, trainers))
+            else:
+                trainers.append(TRAINER_REGISTRY[agent_config.algorithm](agent_config, self.env))
 
         return trainers
 
@@ -99,6 +103,7 @@ class Runner:
 
     def run(self):
         global_step = 0
+        last_test = 0
         episode = 0
         global_bar = tqdm(total=self.config.env.running_steps, desc='Global step')
 
@@ -119,6 +124,14 @@ class Runner:
                 infos['episode'] = episode
                 # current_episode_rewards.append(rewards)
                 # TODO: this should be handled by the writer
+
+                if not self.env._parallel_env.agents:
+                    terminations = {k: True for k in terminations.keys()}
+
+                    # team with more alive agents wins
+                    if hasattr(self.config.env, 'win_reward'):
+                        rewards = self.add_win_reward(rewards)
+
                 self.add_rewards(rewards)
 
                 for trainer in self.trainers:
@@ -144,6 +157,7 @@ class Runner:
                 cycle_bar.update()
                 cycle += 1
                 global_step += 1
+                last_test += 1
 
                 # save checkpoint
                 for trainer in self.trainers:
@@ -156,8 +170,80 @@ class Runner:
             cycle_bar.close()
             episode += 1
 
+            # test episodes if specified
+            for trainer in self.trainers:
+                if hasattr(trainer.agent_config, 'test_algorithm') and last_test >= trainer.agent_config.test_period:
+
+                    self.run_test_episodes(global_step, trainer)
+                    last_test = 0
+
         global_bar.close()
         self.finish()
+
+    def run_test_episodes(self, global_step, trainer):
+        test_config = copy.deepcopy(trainer.agent_config)
+        test_config.side_name = trainer.agent_config.test_side
+        test_trainer = TRAINER_REGISTRY[trainer.agent_config.test_algorithm](test_config, self.env)
+        test_episode_wins = 0
+
+        for test_episode in range(trainer.agent_config.test_episodes):
+            print(f'Running test episode {test_episode+1}/{trainer.agent_config.test_episodes}')
+            observations, infos = self.env.reset()
+            while self.env._parallel_env.agents:    # when episode ends, the list is empty
+                actions = {
+                    agent_name: action for trainer in (trainer,
+                                                       test_trainer) for agent_name,
+                    action in trainer.get_actions(observations,
+                                                  infos).items()
+                }
+                (
+                    next_observations,
+                    rewards,
+                    terminations,
+                    truncations,
+                    infos,
+                ) = self.env.step(actions)
+
+                if not self.env._parallel_env.agents:
+                    # team with more alive agents wins
+                    side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
+                    alive_agents = {
+                        side: len(self.env._parallel_env.env.get_alive(handle)) for side,
+                        handle in side_handles.items()
+                    }
+
+                    breakpoint()
+                    if alive_agents[trainer.side_name] > alive_agents[trainer.agent_config.test_side]:
+                        test_episode_wins += 1
+
+                observations = next_observations
+
+        winrate = test_episode_wins / trainer.agent_config.test_episodes
+        self.writer.add_scalar(
+            f"test_episode_winrate/{trainer.side_name}",
+            winrate,
+            global_step,
+        )
+
+    def add_win_reward(self, rewards):
+        side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
+        alive_agents = {side: len(self.env._parallel_env.env.get_alive(handle)) for side, handle in side_handles.items()}
+
+        if alive_agents[self.env.side_names[0]] > alive_agents[self.env.side_names[1]]:
+            side_rewards = {
+                agent_name: reward + self.config.env.win_reward for agent_name,
+                reward in rewards.items() if self.env.side_names[0] in agent_name
+            }
+            rewards.update(side_rewards)
+
+        elif alive_agents[self.env.side_names[0]] < alive_agents[self.env.side_names[1]]:
+            side_rewards = {
+                agent_name: reward + self.config.env.win_reward for agent_name,
+                reward in rewards.items() if self.env.side_names[1] in agent_name
+            }
+            rewards.update(side_rewards)
+
+        return rewards
 
     def get_all_actions(self, observations, infos) -> dict[str, torch.Tensor]:
 
