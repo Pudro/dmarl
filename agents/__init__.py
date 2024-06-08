@@ -6,6 +6,8 @@ from .isac import ISAC_Agent
 from .masac import MASAC_Agent
 from .qmix import QMIX_Agent
 from .random import Random_Agent
+from .mirror import Mirror_Agent
+from .base import Base_Agent
 
 AGENT_REGISTRY = {
     "IQL": IQL_Agent,
@@ -15,5 +17,6 @@ AGENT_REGISTRY = {
     "ISAC": ISAC_Agent,
     "MASAC": MASAC_Agent,
     "QMIX": QMIX_Agent,
-    "Random": Random_Agent
+    "Random": Random_Agent,
+    "Mirror": Mirror_Agent
 }
