@@ -421,7 +421,7 @@ class Runner:
                 seed_no,
             )
             self.writer.add_scalar(
-                f"total_won_episodes/{self.env.side_names[1]}",
+                f"episode_winrate/{self.env.side_names[1]}",
                 won_episodes[self.env.side_names[1]] / self.config.env.battle_test_episodes,
                 seed_no,
             )
