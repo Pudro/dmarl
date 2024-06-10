@@ -220,15 +220,13 @@ class Runner:
                     ) = env_copy.step(actions)
 
                     if not env_copy._parallel_env.agents:
-                        # eliminate opposing team to win
                         side_handles = {side: handle for side, handle in zip(env_copy.side_names, env_copy.handles)}
                         alive_agents = {
                             side: len(env_copy._parallel_env.env.get_alive(handle)) for side,
                             handle in side_handles.items()
                         }
 
-                        if alive_agents[trainer_copy.side_name] > 0 and alive_agents[
-                                trainer_copy.agent_config.test_side] == 0:
+                        if alive_agents[trainer_copy.side_name] > alive_agents[trainer_copy.agent_config.test_side]:
                             test_episode_wins += 1
 
                     observations = next_observations
@@ -267,36 +265,6 @@ class Runner:
             rewards.update(side_rewards)
 
         return rewards
-
-    def log_win(self, global_step):
-        # if hasattr(self, '
-
-        # eliminate enemy team to win
-        side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
-        alive_agents = {side: len(self.env._parallel_env.env.get_alive(handle)) for side, handle in side_handles.items()}
-
-        if alive_agents[self.env.side_names[0]] > 0 and alive_agents[self.env.side_names[1]] == 0:
-            self.writer.add_scalar(
-                f"total_episode_wins/{self.env.side_names[0]}",
-                1,
-                global_step,
-            )
-            self.writer.add_scalar(
-                f"total_episode_wins/{self.env.side_names[1]}",
-                0,
-                global_step,
-            )
-        elif alive_agents[self.env.side_names[0]] == 0 and alive_agents[self.env.side_names[1]] > 0:
-            self.writer.add_scalar(
-                f"total_episode_wins/{self.env.side_names[1]}",
-                1,
-                global_step,
-            )
-            self.writer.add_scalar(
-                f"total_episode_wins/{self.env.side_names[0]}",
-                0,
-                global_step,
-            )
 
     def get_all_actions(self, observations, infos) -> dict[str, torch.Tensor]:
 
@@ -387,8 +355,6 @@ class Runner:
                                 won_episodes[self.env.side_names[0]] += 1
                             elif alive_agents[self.env.side_names[0]] < alive_agents[self.env.side_names[1]]:
                                 won_episodes[self.env.side_names[1]] += 1
-
-                        # store winning side
 
                     self.add_rewards(rewards)
 
