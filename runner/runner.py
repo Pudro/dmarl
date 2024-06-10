@@ -345,6 +345,10 @@ class Runner:
         last_test = 0
 
         for seed_no in tqdm(range(self.config.env.battle_test_seeds), desc='Battle test', position=2, leave=False):
+            seed = np.random.randint(1e6)
+            np.random.seed(seed)
+            torch.manual_seed(seed)
+            random.seed(seed)
             episode = 0
             won_episodes = {self.env.side_names[0]: 0, self.env.side_names[1]: 0}
             for episode in tqdm(range(self.config.env.battle_test_episodes),
@@ -353,7 +357,7 @@ class Runner:
                                 leave=False):
                 cycle = 0
                 cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}', position=0, leave=False)
-                observations, infos = self.env.reset()
+                observations, infos = self.env.reset(seed)
                 while self.env._parallel_env.agents:    # when episode ends, the list is empty
                     actions = self.get_all_actions(observations, infos)
                     (
