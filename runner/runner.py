@@ -5,7 +5,7 @@ from torch.utils.tensorboard.writer import SummaryWriter
 from argparse import Namespace
 import numpy as np
 import wandb
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import time
 import os
 import shutil
@@ -129,9 +129,6 @@ class Runner:
 
                     if hasattr(self.config.env, 'win_reward'):
                         rewards = self.add_win_reward(rewards)
-
-                    if hasattr(self.config.env, 'run_battle_test') and self.config.env.run_battle_test:
-                        self.log_win(global_step)
 
                 self.add_rewards(rewards)
 
@@ -346,79 +343,87 @@ class Runner:
     def run_battle_test(self):
         global_step = 0
         last_test = 0
-        episode = 0
-        global_bar = tqdm(total=self.config.env.running_steps, desc='Global step')
 
-        while global_step < self.config.env.running_steps:
-            cycle = 0
-            cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}')
-            observations, infos = self.env.reset()
-            while self.env._parallel_env.agents:    # when episode ends, the list is empty
-                actions = self.get_all_actions(observations, infos)
-                (
-                    next_observations,
-                    rewards,
-                    terminations,
-                    truncations,
-                    infos,
-                ) = self.env.step(actions)
-                infos['last_episodic_returns'] = self.last_episodic_returns
-                infos['episode'] = episode
-                # current_episode_rewards.append(rewards)
-                # TODO: this should be handled by the writer
+        for seed_no in tqdm(range(self.config.env.battle_test_seeds), desc='Battle test', position=2, leave=False):
+            episode = 0
+            won_episodes = {self.env.side_names[0]: 0, self.env.side_names[1]: 0}
+            for episode in tqdm(range(self.config.env.battle_test_episodes),
+                                desc=f'Seed {seed_no}',
+                                position=1,
+                                leave=False):
+                cycle = 0
+                cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}', position=0, leave=False)
+                observations, infos = self.env.reset()
+                while self.env._parallel_env.agents:    # when episode ends, the list is empty
+                    actions = self.get_all_actions(observations, infos)
+                    (
+                        next_observations,
+                        rewards,
+                        terminations,
+                        truncations,
+                        infos,
+                    ) = self.env.step(actions)
+                    infos['last_episodic_returns'] = self.last_episodic_returns
+                    infos['episode'] = episode
 
-                if not self.env._parallel_env.agents:
-                    terminations = {k: True for k in terminations.keys()}
+                    if not self.env._parallel_env.agents:
+                        terminations = {k: True for k in terminations.keys()}
 
-                    if hasattr(self.config.env, 'win_reward'):
-                        rewards = self.add_win_reward(rewards)
+                        if hasattr(self.config.env, 'win_reward'):
+                            rewards = self.add_win_reward(rewards)
 
-                self.add_rewards(rewards)
+                            side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
+                            alive_agents = {
+                                side: len(self.env._parallel_env.env.get_alive(handle)) for side,
+                                handle in side_handles.items()
+                            }
 
-                for trainer in self.trainers:
-                    # NOTE: might change so that futures are emited instead of handled inisde
-                    if not trainer.agent_config.test_mode:
-                        trainer.update_agents(
-                            global_step,
-                            actions,
-                            observations,
-                            next_observations,
-                            rewards,
-                            infos,
-                            terminations,
-                            self.writer,
-                        )
+                            # win condition is who has more agents at the end of the episode
+                            if alive_agents[self.env.side_names[0]] > alive_agents[self.env.side_names[1]]:
+                                won_episodes[self.env.side_names[0]] += 1
+                            elif alive_agents[self.env.side_names[0]] < alive_agents[self.env.side_names[1]]:
+                                won_episodes[self.env.side_names[1]] += 1
 
-                observations = next_observations
+                        # store winning side
 
-                if episode % self.config.env.render_episode_period == 0:
-                    self.add_frame()
+                    self.add_rewards(rewards)
 
-                global_bar.update()
-                cycle_bar.update()
-                cycle += 1
-                global_step += 1
-                last_test += 1
+                    observations = next_observations
 
-                # save checkpoint
-                for trainer in self.trainers:
-                    if not trainer.agent_config.test_mode and global_step % trainer.agent_config.model_checkpoint_period == 0:
-                        trainer.save_agents(global_step)
+                    if episode % self.config.env.render_episode_period == 0:
+                        self.add_frame()
 
-            self.save_video(global_step)
-            self.last_episodic_returns = self.episodic_returns.copy()
-            self.save_episodic_returns(global_step)
-            cycle_bar.close()
-            episode += 1
+                    cycle_bar.update()
+                    cycle += 1
+                    global_step += 1
+                    last_test += 1
 
-            # test episodes if specified
-            for trainer in self.trainers:
-                if hasattr(trainer.agent_config, 'test_algorithm') and last_test >= trainer.agent_config.test_period:
+                self.save_video(global_step)
+                self.last_episodic_returns = self.episodic_returns.copy()
+                self.save_episodic_returns(global_step)
+                cycle_bar.close()
+                episode += 1
 
-                    self.run_test_episodes(global_step, trainer)
-                    last_test = 0
+            self.writer.add_scalar(
+                f"total_won_episodes/{self.env.side_names[0]}",
+                won_episodes[self.env.side_names[0]],
+                seed_no,
+            )
+            self.writer.add_scalar(
+                f"total_won_episodes/{self.env.side_names[1]}",
+                won_episodes[self.env.side_names[1]],
+                seed_no,
+            )
 
-        global_bar.close()
+            self.writer.add_scalar(
+                f"episode_winrate/{self.env.side_names[0]}",
+                won_episodes[self.env.side_names[0]] / self.config.env.battle_test_episodes,
+                seed_no,
+            )
+            self.writer.add_scalar(
+                f"total_won_episodes/{self.env.side_names[1]}",
+                won_episodes[self.env.side_names[1]] / self.config.env.battle_test_episodes,
+                seed_no,
+            )
+
         self.finish()
-
-        raise NotImplementedError
