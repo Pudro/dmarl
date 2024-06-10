@@ -70,7 +70,7 @@ class ISAC_Trainer(Base_Trainer):
                 qf2_next_target = nn_agent.target_qf2(data.next_observations)
                 # we can use the action probabilities instead of MC sampling to estimate the expectation
                 min_qf_next_target = next_state_action_probs * (
-                    torch.min(qf1_next_target, qf2_next_target) - nn_agent.agent_config.alpha * next_state_log_pi
+                    torch.min(qf1_next_target, qf2_next_target) - self.agent_config.alpha * next_state_log_pi
                 )
                 # adapt Q-target for discrete Q-function
                 min_qf_next_target = min_qf_next_target.sum(dim=1)
@@ -96,7 +96,7 @@ class ISAC_Trainer(Base_Trainer):
                 qf2_values = nn_agent.qf2(data.observations)
                 min_qf_values = torch.min(qf1_values, qf2_values)
             # no need for reparameterization, the expectation can be calculated for discrete actions
-            actor_loss = (action_probs * ((nn_agent.agent_config.alpha * log_pi) - min_qf_values)).mean()
+            actor_loss = (action_probs * ((self.agent_config.alpha * log_pi) - min_qf_values)).mean()
 
             nn_agent.actor_optimizer.zero_grad()
             actor_loss.backward()
@@ -167,6 +167,16 @@ class ISAC_Trainer(Base_Trainer):
             torch.jit.wait(fut)
 
         self.greedy_decay(global_step, infos)
+        self.decay_alpha(global_step, infos)
+
+    def decay_alpha(self, global_step, infos):
+        decay_function = self._get_decay_function(self.agent_config.alpha_decay_type)
+        self.agent_config.alpha = decay_function(global_step,
+                                                        infos,
+                                                        self.agent_config.alpha_start,
+                                                        self.agent_config.alpha_end,
+                                                        self.agent_config.alpha_steps,
+                                                        self.agent_config.alpha_rate)
     
 
     def save_agents(self, checkpoint=None):
