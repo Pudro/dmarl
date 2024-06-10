@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch
 import numpy as np
 
+import copy
+
 
 class Base_Trainer:
 
@@ -53,6 +55,19 @@ class Base_Trainer:
 
             if self.side_name == stripped_agent_name:
                 agent_list.append(AGENT_REGISTRY[self.algorithm](self.agent_config, self.env, agent_name))
+
+        if hasattr(self.agent_config, 'share_parameters') and self.agent_config.share_parameters:
+            first_agent = agent_list[0]
+            new_list = [first_agent]
+            for i, agent in enumerate(agent_list):
+                if i > 0:
+                    original_rb = copy.deepcopy(agent.rb)
+                    original_name = copy.deepcopy(agent.agent_name)
+                    agent = copy.copy(first_agent)
+                    agent.rb = copy.deepcopy(original_rb)
+                    agent.agent_name = copy.deepcopy(original_name)
+                    new_list.append(agent)
+            agent_list = new_list
 
         return nn.ModuleList(agent_list)
 
