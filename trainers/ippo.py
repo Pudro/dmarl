@@ -159,7 +159,6 @@ class IPPO_Trainer(Base_Trainer):
 
         rb_futures = []
         for nn_agent in self.nn_agents:
-            breakpoint()
             prob = actions[self.side_name][nn_agent.agent_name][1]
             val = actions[self.side_name][nn_agent.agent_name][2]
             rb_futures.append(
