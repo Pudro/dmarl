@@ -40,6 +40,9 @@ class QMIX_Buffer(ReplayBuffer):
         optimize_memory_usage: bool = False,
         handle_timeout_termination: bool = True,
     ):
+        action_space.dtype = np.int8
+        observation_space.dtype = np.float16
+
         super().__init__(
             buffer_size,
             observation_space,
