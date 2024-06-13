@@ -203,7 +203,7 @@ class Runner:
                 print(
                     f'\nRunning test episode {test_episode+1}/{trainer_copy.agent_config.test_episodes}\nAt step: {global_step}\n'
                 )
-                observations, infos = env_copy.reset(seed)
+                observations, infos = env_copy.reset(seed=seed)
                 while env_copy._parallel_env.agents:    # when episode ends, the list is empty
                     actions = {
                         agent_name: action for trainer in (trainer_copy,
@@ -323,9 +323,11 @@ class Runner:
                                 desc=f'Seed {seed_no}',
                                 position=1,
                                 leave=False):
+                # otherwise the same episode will roll out
+                seed += episode
                 cycle = 0
                 cycle_bar = tqdm(total=self.config.env.max_cycles, desc=f'Episode {episode}', position=0, leave=False)
-                observations, infos = self.env.reset(seed)
+                observations, infos = self.env.reset(seed=seed)
                 while self.env._parallel_env.agents:    # when episode ends, the list is empty
                     actions = self.get_all_actions(observations, infos)
                     (
@@ -341,26 +343,26 @@ class Runner:
                     if not self.env._parallel_env.agents:
                         terminations = {k: True for k in terminations.keys()}
 
+                        side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
+                        alive_agents = {
+                            side: len(self.env._parallel_env.env.get_alive(handle)) for side,
+                            handle in side_handles.items()
+                        }
+
+                        # win condition is who has more agents at the end of the episode
+                        if alive_agents[self.env.side_names[0]] > alive_agents[self.env.side_names[1]]:
+                            won_episodes[self.env.side_names[0]] += 1
+                        elif alive_agents[self.env.side_names[0]] < alive_agents[self.env.side_names[1]]:
+                            won_episodes[self.env.side_names[1]] += 1
+
                         if hasattr(self.config.env, 'win_reward'):
                             rewards = self.add_win_reward(rewards)
-
-                            side_handles = {side: handle for side, handle in zip(self.env.side_names, self.env.handles)}
-                            alive_agents = {
-                                side: len(self.env._parallel_env.env.get_alive(handle)) for side,
-                                handle in side_handles.items()
-                            }
-
-                            # win condition is who has more agents at the end of the episode
-                            if alive_agents[self.env.side_names[0]] > alive_agents[self.env.side_names[1]]:
-                                won_episodes[self.env.side_names[0]] += 1
-                            elif alive_agents[self.env.side_names[0]] < alive_agents[self.env.side_names[1]]:
-                                won_episodes[self.env.side_names[1]] += 1
 
                     self.add_rewards(rewards)
 
                     observations = next_observations
 
-                    if episode % self.config.env.render_episode_period == 0:
+                    if episode == seed_no:
                         self.add_frame()
 
                     cycle_bar.update()
@@ -368,7 +370,8 @@ class Runner:
                     global_step += 1
                     last_test += 1
 
-                self.save_video(global_step)
+                if episode == seed_no:
+                    self.save_video(seed_no)
                 self.last_episodic_returns = self.episodic_returns.copy()
                 self.save_episodic_returns(global_step)
                 cycle_bar.close()
