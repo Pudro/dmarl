@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch
 import numpy as np
 from trainers.base import Base_Trainer
+import copy
 
 
 class Mirror_Trainer(Base_Trainer):
@@ -27,6 +28,9 @@ class Mirror_Trainer(Base_Trainer):
 
         if not hasattr(self, 'mirrored_agents'):
             raise ValueError(f'Side to mirror: "{self.mirrored_side}" not found in trainer list {trainers}')
+
+        for agent, mirrored_agent in zip(self.nn_agents, self.mirrored_trainer.nn_agents):
+            agent.rb = copy.deepcopy(mirrored_agent.rb)
 
     def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         side_obs = {agent_name: obs for agent_name, obs in observations.items() if self.side_name in agent_name}
@@ -64,7 +68,54 @@ class Mirror_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
-        pass
+        for agent, mirrored_agent in zip(self.nn_agents, self.mirrored_trainer.nn_agents):
+            agent.mirrored_buf = mirrored_agent.rb
+            mirrored_agent.rb = agent.rb
+
+        # side_actions = {agent_name: action for agent_name, action in actions.items() if self.side_name in agent_name}
+        # side_obs = {agent_name: obs for agent_name, obs in observations.items() if self.side_name in agent_name}
+        # side_next_obs = {
+        #     agent_name: obs for agent_name,
+        #     obs in next_observations.items() if self.side_name in agent_name
+        # }
+        # side_rewards = {agent_name: reward for agent_name, reward in rewards.items() if self.side_name in agent_name}
+        # side_infos = {agent_name: info for agent_name, info in infos.items() if self.side_name in agent_name}
+        # side_terminations = {
+        #     agent_name: term for agent_name,
+        #     term in terminations.items() if self.side_name in agent_name
+        # }
+
+        new_values = {}
+        for dictionary, name in zip((actions, observations, next_observations, rewards, infos, terminations), ('actions', 'observations', 'next_observations', 'rewards', 'infos', 'terminations')):
+            updated_dict = {key: value for key, value in dictionary.items() if self.side_name in key}
+            new_values[f'side_{name}'] = updated_dict
+
+        # rename back to mirrored side name
+        for dictionary in new_values.values():
+            updated_dict = {key.replace(self.side_name, self.mirrored_side): value for key, value in dictionary.items()}
+            dictionary.clear()
+            dictionary.update(updated_dict)
+
+        # this is not needed since we are renaming side actions to the mirrored agent side name
+        # # section for mappo
+        # if self.side_name in actions:
+        #     actions[self.side_name] = {
+        #         agent_name.replace(self.mirrored_side,
+        #                            self.side_name): action for agent_name,
+        #         action in actions[self.side_name].items()
+        #     }
+
+        self.mirrored_trainer.update_agents(global_step,
+                                            new_values['side_actions'],
+                                            new_values['side_observations'],
+                                            new_values['side_next_observations'],
+                                            new_values['side_rewards'],
+                                            new_values['side_infos'],
+                                            new_values['side_terminations'],
+                                            writer)
+
+        for agent, mirrored_agent in zip(self.nn_agents, self.mirrored_trainer.nn_agents):
+            mirrored_agent.rb = agent.mirrored_buf
 
     def save_agents(self, checkpoint=None):
         pass
