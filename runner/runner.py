@@ -14,7 +14,7 @@ import torch
 import copy
 import threading
 import random
-import yaml
+import sys
 from trainers.base import Base_Trainer
 
 
@@ -189,9 +189,16 @@ class Runner:
         test_config.end_greedy = 0
         test_config.test_mode = True
 
+        # remove replay buffers
+        for agent_copy in trainer_copy.nn_agents:
+            agent_copy.rb = None
+
         env_copy = copy.deepcopy(self.env)
 
         test_trainer = TRAINER_REGISTRY[trainer_copy.agent_config.test_algorithm](test_config, env_copy)
+
+        for test_agent in test_trainer.nn_agents:
+            test_agent.rb = None
 
         def execute_in_thread():
             test_episode_wins = 0
@@ -241,6 +248,8 @@ class Runner:
             np.random.seed(trainer_copy.agent_config.seed)
             torch.manual_seed(trainer_copy.agent_config.seed)
             random.seed(trainer_copy.agent_config.seed)
+
+            sys.exit()
 
         thread = threading.Thread(target=execute_in_thread)
         thread.start()
