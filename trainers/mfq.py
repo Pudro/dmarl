@@ -13,6 +13,7 @@ import torch.nn.functional as F
 
 
 class MFQ_Trainer(Base_Trainer):
+
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
@@ -24,40 +25,30 @@ class MFQ_Trainer(Base_Trainer):
         if self.agent_config.model_dir_load:
             self.load_agents()
 
-        self.old_mean_action_probs = torch.zeros(self.env.action_spaces[f'{self.side_name}_0'].n).to(self.agent_config.device)
+        self.old_mean_action_probs = torch.zeros(self.env.action_spaces[f'{self.side_name}_0'].n).to(
+            self.agent_config.device)
 
     def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         # TODO: may move these functions outside
         def _full_action_future():
             return torch.argmax(
-                    nn_agent(
-                        torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                            self.agent_config.device
-                        ),
-                    self.old_mean_action_probs.to(self.agent_config.device)
-                    ),
-                    # dim=0,
+                nn_agent(
+                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
+                    self.old_mean_action_probs.to(self.agent_config.device)),
+            # dim=0,
             )
 
         action_futures = {}
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    ).to(self.agent_config.device)
-                )
+                action_fut = torch.jit.fork(lambda: torch.tensor(self.env.action_space(nn_agent.agent_name).sample()).to(
+                    self.agent_config.device))
             else:
-                action_fut = torch.jit.fork(
-                    _full_action_future
-                )
+                action_fut = torch.jit.fork(_full_action_future)
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        return {
-            agent: torch.jit.wait(fut)
-            for agent, fut in action_futures.items()
-        }
+        return {agent: torch.jit.wait(fut) for agent, fut in action_futures.items()}
 
     def get_boltzmann_policy(self, x):
         return F.softmax((x / self.temperature), dim=-1)
@@ -73,17 +64,15 @@ class MFQ_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
+
         def _update_mfq():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
 
             with torch.no_grad():
-                target_batches = nn_agent.target(data.next_observations, data.mean_next_actions) #.max(dim=1)
+                target_batches = nn_agent.target(data.next_observations, data.mean_next_actions)    #.max(dim=1)
                 pi_batches = self.get_boltzmann_policy(target_batches)
-                v_mf, _ = (target_batches * pi_batches).max(dim = 1)
-                td_target = (
-                    data.rewards.flatten()
-                    + self.agent_config.gamma * v_mf * (1 - data.dones.flatten())
-                )
+                v_mf, _ = (target_batches * pi_batches).max(dim=1)
+                td_target = (data.rewards.flatten() + self.agent_config.gamma * v_mf * (1 - data.dones.flatten()))
 
             old_val = nn_agent(data.observations, data.mean_actions).gather(1, data.actions).squeeze()
             loss = F.mse_loss(td_target, old_val)
@@ -121,31 +110,27 @@ class MFQ_Trainer(Base_Trainer):
                 for target_network_param, q_network_param in zip(
                     nn_agent.target_network.parameters(), nn_agent.parameters()
                 ):
-                    target_network_param.data.copy_(
-                        self.agent_config.tau * q_network_param.data
-                        + (1.0 - self.agent_config.tau) * target_network_param.data
-                    )
+                    target_network_param.data.copy_(self.agent_config.tau * q_network_param.data +
+                                                    (1.0 - self.agent_config.tau) * target_network_param.data)
 
         rb_futures = []
 
         side_actions = {k: v for k, v in actions.items() if self.side_name in k}
-        one_hot_next_actions = F.one_hot(torch.stack([*side_actions.values()]), num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
+        one_hot_next_actions = F.one_hot(torch.stack([*side_actions.values()]),
+                                         num_classes=self.env.action_spaces[f'{self.side_name}_0'].n).float()
         mean_next_actions = torch.mean(one_hot_next_actions, dim=0)
 
         for nn_agent in self.nn_agents:
             rb_futures.append(
-                torch.jit.fork(
-                    nn_agent.rb.add,
-                    observations[nn_agent.agent_name],
-                    next_observations[nn_agent.agent_name],
-                    actions[nn_agent.agent_name].cpu(),
-                    np.array(rewards[nn_agent.agent_name]),
-                    np.array(terminations[nn_agent.agent_name]),
-                    infos[nn_agent.agent_name],
-                    self.old_mean_action_probs.cpu(),
-                    mean_next_actions.cpu()
-                )
-            )
+                torch.jit.fork(nn_agent.rb.add,
+                               observations[nn_agent.agent_name],
+                               next_observations[nn_agent.agent_name],
+                               actions[nn_agent.agent_name].cpu(),
+                               np.array(rewards[nn_agent.agent_name]),
+                               np.array(terminations[nn_agent.agent_name]),
+                               infos[nn_agent.agent_name],
+                               self.old_mean_action_probs.cpu(),
+                               mean_next_actions.cpu()))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -163,7 +148,6 @@ class MFQ_Trainer(Base_Trainer):
         self.temperature_decay(global_step, infos)
 
         self.old_mean_action_probs = mean_next_actions
-    
 
     def save_agents(self, checkpoint=None):
 
@@ -181,9 +165,9 @@ class MFQ_Trainer(Base_Trainer):
                     "agent_name": nn_agent.agent_name,
                     "network_state_dict": nn_agent.network.state_dict(),
                     "target_network_state_dict": nn_agent.target_network.state_dict(),
-                    # "mean_network_state_dict": nn_agent.mean_network.state_dict(),
-                    # "target_mean_network_state_dict": nn_agent.target_mean_network.state_dict(),
-                    # "cat_layer_state_dict": nn_agent.cat_layer.state_dict(),
+            # "mean_network_state_dict": nn_agent.mean_network.state_dict(),
+            # "target_mean_network_state_dict": nn_agent.target_mean_network.state_dict(),
+            # "cat_layer_state_dict": nn_agent.cat_layer.state_dict(),
                     "optimizer_state_dict": nn_agent.optimizer.state_dict(),
                 },
                 save_path + f"/{nn_agent.agent_name}.tar",
@@ -197,9 +181,7 @@ class MFQ_Trainer(Base_Trainer):
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
         if len(model_files) < len(self.nn_agents):
-            raise Exception(
-                f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"
-            )
+            raise Exception(f"Model directory {self.agent_config.model_dir_load} has fewer files than needed")
 
         for nn_agent, file_name in zip(self.nn_agents, model_files):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
@@ -217,7 +199,8 @@ class MFQ_Trainer(Base_Trainer):
             nn_agent.to(self.agent_config.device)
 
     def _get_temperature_decay(self) -> Callable:
-        if not hasattr(self.agent_config, 'temperature_decay_type') or self.agent_config.temperature_decay_type == 'Linear':
+        if not hasattr(self.agent_config,
+                       'temperature_decay_type') or self.agent_config.temperature_decay_type == 'Linear':
             return self._linear_temperature
         elif self.agent_config.temperature_decay_type == 'Adaptive':
             return self._adaptive_temperature
@@ -228,19 +211,24 @@ class MFQ_Trainer(Base_Trainer):
 
     def _linear_temperature(self, global_step, infos):
         if global_step < self.agent_config.temperature_decay_steps:
-            temp_step = (self.agent_config.start_temperature - self.agent_config.end_temperature) / self.agent_config.temperature_decay_steps
-            self.temperature = max(self.agent_config.end_temperature, self.agent_config.start_temperature - temp_step * global_step)
+            temp_step = (self.agent_config.start_temperature -
+                         self.agent_config.end_temperature) / self.agent_config.temperature_decay_steps
+            self.temperature = max(self.agent_config.end_temperature,
+                                   self.agent_config.start_temperature - temp_step * global_step)
         else:
             self.temperature = self.agent_config.end_temperature
 
     def _exponential_temperature(self, global_step, infos):
         if global_step < self.agent_config.temperature_decay_steps:
-            self.temperature = self.agent_config.end_temperature + (self.agent_config.start_temperature - self.agent_config.end_temperature) * np.exp(-self.agent_config.temperature_decay_rate * global_step)
+            self.temperature = self.agent_config.end_temperature + (
+                self.agent_config.start_temperature - self.agent_config.end_temperature) * np.exp(
+                    -self.agent_config.temperature_decay_rate * global_step)
         else:
             self.temperature = self.agent_config.end_temperature
 
     def _adaptive_temperature(self, global_step, infos):
-        last_average_returns = np.mean(tuple(r for k, r in infos['last_episodic_returns'].items() if self.side_name in k))
+        last_average_returns = np.mean(tuple(r for k,
+                                             r in infos['last_episodic_returns'].items() if self.side_name in k))
         if self.temperature > self.agent_config.end_temperature and last_average_returns >= self.agent_config.temperature_reward_threshold:
             self.temperature = self.temperature - self.agent_config.temperature_delta
             self.agent_config.temperature_reward_threshold = self.agent_config.temperature_reward_threshold + self.agent_config.temperature_reward_increment
