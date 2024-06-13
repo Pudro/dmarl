@@ -18,6 +18,7 @@ class MASAC_Trainer(Base_Trainer):
         self.agent_config = agent_config
         self.env = env
         self.epsilon = self.agent_config.start_greedy
+        self.agent_config.alpha = self.agent_config.start_greedy
         super().__init__(agent_config, env)
 
         # initialize mixing network
@@ -207,11 +208,11 @@ class MASAC_Trainer(Base_Trainer):
     def decay_alpha(self, global_step, infos):
         decay_function = self._get_decay_function(self.agent_config.alpha_decay_type)
         self.agent_config.alpha = decay_function(global_step,
-                                                        infos,
-                                                        self.agent_config.alpha_start,
-                                                        self.agent_config.alpha_end,
-                                                        self.agent_config.alpha_steps,
-                                                        self.agent_config.alpha_rate)
+                                                 infos,
+                                                 self.agent_config.alpha_start,
+                                                 self.agent_config.alpha_end,
+                                                 self.agent_config.alpha_decay_steps,
+                                                 self.agent_config.alpha_decay_rate)
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name

@@ -12,6 +12,7 @@ import torch.nn.functional as F
 
 
 class ISAC_Trainer(Base_Trainer):
+
     def __init__(self, agent_config: Namespace, env: MAgentEnv) -> None:
         self.agent_config = agent_config
         self.env = env
@@ -25,29 +26,19 @@ class ISAC_Trainer(Base_Trainer):
         action_futures = {}
         for nn_agent in self.nn_agents:
             if random.random() < self.epsilon:
-                action_fut = torch.jit.fork(
-                    lambda: torch.tensor(
-                        self.env.action_space(nn_agent.agent_name).sample()
-                    )
-                )
+                action_fut = torch.jit.fork(lambda: torch.tensor(self.env.action_space(nn_agent.agent_name).sample()))
             else:
                 action_fut = torch.jit.fork(
                     nn_agent.get_action,
-                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(
-                        self.agent_config.device
-                    ),
-                    # dim=0,
+                    torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
+                # dim=0,
                 )
 
             action_futures[nn_agent.agent_name] = action_fut
 
-        actions = {
-            agent_name: torch.jit.wait(fut)
-            for agent_name, fut in action_futures.items()
-        }
+        actions = {agent_name: torch.jit.wait(fut) for agent_name, fut in action_futures.items()}
 
         return actions
-
 
     def update_agents(
         self,
@@ -60,6 +51,7 @@ class ISAC_Trainer(Base_Trainer):
         terminations,
         writer,
     ):
+
         def _update_isac():
             data = nn_agent.rb.sample(self.agent_config.batch_size)
 
@@ -69,14 +61,15 @@ class ISAC_Trainer(Base_Trainer):
                 qf1_next_target = nn_agent.target_qf1(data.next_observations)
                 qf2_next_target = nn_agent.target_qf2(data.next_observations)
                 # we can use the action probabilities instead of MC sampling to estimate the expectation
-                min_qf_next_target = next_state_action_probs * (
-                    torch.min(qf1_next_target, qf2_next_target) - self.agent_config.alpha * next_state_log_pi
-                )
+                min_qf_next_target = next_state_action_probs * (torch.min(qf1_next_target,
+                                                                          qf2_next_target) -
+                                                                self.agent_config.alpha * next_state_log_pi)
                 # adapt Q-target for discrete Q-function
                 min_qf_next_target = min_qf_next_target.sum(dim=1)
-                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * nn_agent.agent_config.gamma * (min_qf_next_target)
+                next_q_value = data.rewards.flatten() + (1 - data.dones.flatten()) * nn_agent.agent_config.gamma * (
+                    min_qf_next_target)
 
-             # use Q-values only for the taken actions
+            # use Q-values only for the taken actions
             qf1_values = nn_agent.qf1(data.observations)
             qf2_values = nn_agent.qf2(data.observations)
             qf1_a_values = qf1_values.gather(1, data.actions.long()).view(-1)
@@ -114,9 +107,11 @@ class ISAC_Trainer(Base_Trainer):
             # update the target networks
             if global_step % self.agent_config.target_network_train_period == 0:
                 for param, target_param in zip(nn_agent.qf1.parameters(), nn_agent.target_qf1.parameters()):
-                    target_param.data.copy_(self.agent_config.tau * param.data + (1 - self.agent_config.tau) * target_param.data)
+                    target_param.data.copy_(self.agent_config.tau * param.data +
+                                            (1 - self.agent_config.tau) * target_param.data)
                 for param, target_param in zip(nn_agent.qf2.parameters(), nn_agent.target_qf2.parameters()):
-                    target_param.data.copy_(self.agent_config.tau * param.data + (1 - self.agent_config.tau) * target_param.data)
+                    target_param.data.copy_(self.agent_config.tau * param.data +
+                                            (1 - self.agent_config.tau) * target_param.data)
 
             if global_step % 1 == 0:
                 writer.add_scalar(f"qf1_values/{nn_agent.agent_name}", qf1_a_values.mean().item(), global_step)
@@ -136,7 +131,6 @@ class ISAC_Trainer(Base_Trainer):
                     global_step,
                 )
 
-
         # TODO: currently data is added to the replay buffer on each global_step
         # maybe add the whole episode to replay buffer each episode
         # and add episodic returns to each reward
@@ -151,8 +145,7 @@ class ISAC_Trainer(Base_Trainer):
                     np.array(rewards[nn_agent.agent_name]),
                     np.array(terminations[nn_agent.agent_name]),
                     infos[nn_agent.agent_name],
-                )
-            )
+                ))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -172,12 +165,11 @@ class ISAC_Trainer(Base_Trainer):
     def decay_alpha(self, global_step, infos):
         decay_function = self._get_decay_function(self.agent_config.alpha_decay_type)
         self.agent_config.alpha = decay_function(global_step,
-                                                        infos,
-                                                        self.agent_config.alpha_start,
-                                                        self.agent_config.alpha_end,
-                                                        self.agent_config.alpha_steps,
-                                                        self.agent_config.alpha_rate)
-    
+                                                 infos,
+                                                 self.agent_config.alpha_start,
+                                                 self.agent_config.alpha_end,
+                                                 self.agent_config.alpha_decay_steps,
+                                                 self.agent_config.alpha_decay_rate)
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
@@ -211,9 +203,7 @@ class ISAC_Trainer(Base_Trainer):
             key=lambda x: int(x.split("_")[1].split(".")[0]),
         )
         if len(model_files) < len(self.nn_agents):
-            raise Exception(
-                f"Model directory {self.agent_config.model_dir_load} has fewer files than needed"
-            )
+            raise Exception(f"Model directory {self.agent_config.model_dir_load} has fewer files than needed")
 
         for nn_agent, file_name in zip(self.nn_agents, model_files):
             model_path = self.agent_config.model_dir_load + f"/{file_name}"
