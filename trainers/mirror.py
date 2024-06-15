@@ -96,14 +96,13 @@ class Mirror_Trainer(Base_Trainer):
             dictionary.clear()
             dictionary.update(updated_dict)
 
-        # this is not needed since we are renaming side actions to the mirrored agent side name
-        # # section for mappo
-        # if self.side_name in actions:
-        #     actions[self.side_name] = {
-        #         agent_name.replace(self.mirrored_side,
-        #                            self.side_name): action for agent_name,
-        #         action in actions[self.side_name].items()
-        #     }
+        # section for mappo
+        if self.mirrored_side in new_values['side_actions']:
+            new_values['side_actions'][self.mirrored_side] = {
+                agent_name.replace(self.side_name,
+                                   self.mirrored_side): tup for agent_name,
+                tup in new_values['side_actions'][self.mirrored_side].items()
+            }
 
         self.mirrored_trainer.update_agents(global_step,
                                             new_values['side_actions'],
