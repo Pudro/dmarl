@@ -91,9 +91,9 @@ class QMIX_Buffer(ReplayBuffer):
             next_obs = self._normalize_obs(self.next_observations[batch_inds, env_indices, :], env)
 
         data = (
-            self._normalize_obs(self.observations[batch_inds, env_indices, :], env),
-            self.actions[batch_inds, env_indices, :],
-            next_obs,
+            self._normalize_obs(self.observations[batch_inds, env_indices, :], env).astype(np.float32),
+            self.actions[batch_inds, env_indices, :].astype(np.int64),
+            next_obs.astype(np.float32),
             (self.dones[batch_inds, env_indices] * (1 - self.timeouts[batch_inds, env_indices])).reshape(-1, 1),
             self._normalize_reward(self.rewards[batch_inds, env_indices].reshape(-1, 1), env),
             self.states[batch_inds, env_indices, :].astype(np.float32),
