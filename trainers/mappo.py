@@ -36,6 +36,8 @@ class MAPPO_Trainer(Base_Trainer):
                                                   lr=self.agent_config.learning_rate,
                                                   eps=1e-5)
 
+        self.prev_state = self.env.state()
+
         # register agents here
         for nn_agent in self.nn_agents:
             nn_agent.register_value_network(self.value_network, self.value_network_optimizer)
@@ -45,6 +47,10 @@ class MAPPO_Trainer(Base_Trainer):
 
     def get_actions(self, observations, infos) -> dict[str, torch.Future]:
         action_futures = {}
+        curr_state = self.env.state()
+        if curr_state is None:
+            curr_state = self.prev_state
+
         for nn_agent in self.nn_agents:
             # stacked_obs = [
             #     torch.tensor(v).flatten().to(self.agent_config.device) for k,
@@ -58,7 +64,7 @@ class MAPPO_Trainer(Base_Trainer):
             action_fut = torch.jit.fork(
                 nn_agent.choose_action,
                 torch.tensor(observations[nn_agent.agent_name].flatten()).to(self.agent_config.device),
-                torch.tensor(self.env.state().flatten()).to(self.agent_config.device))
+                torch.tensor(curr_state.flatten()).to(self.agent_config.device))
 
             action_futures[nn_agent.agent_name] = action_fut
 
@@ -192,6 +198,10 @@ class MAPPO_Trainer(Base_Trainer):
                 )
 
         rb_futures = []
+        curr_state = self.env.state()
+        if curr_state is None:
+            curr_state = self.prev_state
+
         for nn_agent in self.nn_agents:
             prob = actions[self.side_name][nn_agent.agent_name][1]
             val = actions[self.side_name][nn_agent.agent_name][2]
@@ -205,7 +215,7 @@ class MAPPO_Trainer(Base_Trainer):
                     val,
                     np.array(rewards[nn_agent.agent_name]),
                     terminations[nn_agent.agent_name],
-                    self.env.state().flatten()))
+                    curr_state.flatten()))
 
         for fut in rb_futures:
             torch.jit.wait(fut)
@@ -225,6 +235,9 @@ class MAPPO_Trainer(Base_Trainer):
 
         for fut in rb_futures:
             torch.jit.wait(fut)
+
+        if self.env.state() is not None:
+            self.prev_state = self.env.state()
 
     def save_agents(self, checkpoint=None):
         save_path = self.agent_config.model_dir_save + "/" + self.agent_config.side_name
