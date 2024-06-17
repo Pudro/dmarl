@@ -1,9 +1,7 @@
-from supersuit.multiagent_wrappers import black_death_v3
 from trainers.base import Base_Trainer
 from environments.magent_env import MAgentEnv
 from argparse import Namespace
 import os
-import torch
 import random
 import numpy as np
 import torch
@@ -18,7 +16,6 @@ class MASAC_Trainer(Base_Trainer):
         self.agent_config = agent_config
         self.env = env
         self.epsilon = self.agent_config.start_greedy
-        self.agent_config.alpha = self.agent_config.start_greedy
         super().__init__(agent_config, env)
 
         # initialize mixing network
@@ -29,6 +26,13 @@ class MASAC_Trainer(Base_Trainer):
 
         if self.agent_config.model_dir_load:
             self.load_agents()
+
+        if hasattr(self.agent_config, 'alpha_autotune') and self.agent_config.alpha_autotune:
+            self.target_entropy = -self.agent_config.target_entropy_scale * torch.log(
+                1 / torch.tensor(self.env.action_spaces[f'{self.side_name}_0'].n))
+            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.agent_config.device)
+            self.agent_config.alpha = self.log_alpha.exp().item()
+            self.a_optimizer = optim.Adam([self.log_alpha], lr=self.agent_config.learning_rate, eps=1e-4)
 
     def get_actions(self, observations, infos) -> dict[str, torch.Tensor]:
         action_futures = {}
@@ -172,7 +176,19 @@ class MASAC_Trainer(Base_Trainer):
                     nn_agent.q_optimizer.step()
 
                 self.greedy_decay(global_step, infos)
-                self.decay_alpha(global_step, infos)
+                if hasattr(self.agent_config, 'alpha_autotune') and self.agent_config.alpha_autotune:
+                    # re-use action probabilities for temperature loss
+                    alpha_loss = (action_probs.detach() * (-self.log_alpha.exp() *
+                                                           (log_pi + self.target_entropy).detach())).mean()
+
+                    self.a_optimizer.zero_grad()
+                    alpha_loss.backward()
+                    self.a_optimizer.step()
+                    self.agent_config.alpha = self.log_alpha.exp().item()
+
+                else:
+                    self.decay_alpha(global_step, infos)
+                    print(self.agent_config.alpha)
 
                 for nn_agent in self.nn_agents:
                     if global_step % 1 == 0:
@@ -180,6 +196,11 @@ class MASAC_Trainer(Base_Trainer):
                         writer.add_scalar(
                             f"epsilon_greedy/{nn_agent.agent_name}",
                             self.epsilon,
+                            global_step,
+                        )
+                        writer.add_scalar(
+                            f"alpha/{nn_agent.agent_name}",
+                            self.agent_config.alpha,
                             global_step,
                         )
 
