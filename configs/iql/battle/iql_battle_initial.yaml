@@ -1,0 +1,80 @@
+env:
+  env_id: "custom_battle"
+  log_dir: "./logs/battle/iql/iql_battle_initial/"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  project_name: ""
+  wandb_user_name: ""
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  device: "cuda:0"
+  minimap_mode: False
+  max_cycles: 500 # number of env.steps in an episode
+  extra_features: False
+  map_size: 35
+  seed: 1
+  running_steps: 1
+  render_episode_period: 100
+  win_reward: 15
+  run_battle_test: True
+  battle_test_episodes: 100
+  battle_test_seeds: 20
+agents:
+-
+  test_mode: True
+  model_dir_load: "./saved_models/battle/iql/iql_battle_pretrain/"
+  model_dir_save: ""
+  model_checkpoint_period: 500_000
+  share_parameters: False
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "IQL"
+  side_name: "red"
+  layer_type: "Linear"
+  hidden_layers: [64, 64]
+  activation: "ReLU"
+
+  buffer_size: 10_000
+  batch_size: 256
+  learning_start: 10_000
+  learning_rate: 0.001 #0.001
+  gamma: 0.999
+  tau: 0.005
+
+  # epsilon greedy
+  start_greedy: 0.0
+  end_greedy: 0.0
+  greedy_decay_rate: 5.0e-6
+  greedy_decay_type: "Exponential"
+  greedy_decay_steps: 1_000_000
+
+  train_period: 128
+  target_network_train_period: 256
+-
+  test_mode: True
+  model_dir_load: "./saved_models/battle/iql/iql_battle_e2e_big/"
+  model_dir_save: ""
+  model_checkpoint_period: 500_000
+  share_parameters: False
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "IQL"
+  side_name: "blue"
+  layer_type: "Linear"
+  hidden_layers: [64, 64]
+  activation: "ReLU"
+
+  buffer_size: 10_000
+  batch_size: 256
+  learning_start: 10_000
+  learning_rate: 0.001 #0.001
+  gamma: 0.999
+  tau: 0.005
+
+  # epsilon greedy
+  start_greedy: 0.0
+  end_greedy: 0.0
+  greedy_decay_rate: 5.0e-6
+  greedy_decay_type: "Exponential"
+  greedy_decay_steps: 1_000_000
+
+  train_period: 128
+  target_network_train_period: 256

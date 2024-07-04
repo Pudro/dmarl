@@ -1,0 +1,57 @@
+env:
+  env_id: "custom_adversarial_pursuit"
+  log_dir: "./logs/mappo/mappo_adversarial_initial"
+  logger: "tensorboard"  # Choices: tensorboard, wandb.
+  project_name: ""
+  wandb_user_name: ""
+  render_mode: 'rgb_array' # Choices: 'human', 'rgb_array'.
+  device: "cuda:0"
+  minimap_mode: False
+  max_cycles: 1000 # number of env.steps in an episode
+  extra_features: False
+  map_size: 48
+  seed: 1
+  running_steps: 100_000
+  render_episode_period: 20
+agents:
+-
+  test_mode: True
+  model_dir_load: "./saved_models/mappo/mappo_adversarial_pretrain/"
+  model_dir_save: ""
+  model_checkpoint_period: 100_000
+  load_policy_only: False
+  reset_optimizer: False
+  algorithm: "MAPPO"
+  side_name: "predator"
+  layer_type: "Linear"
+  hidden_layers: [64, 64]
+  activation: "Tanh"
+
+  buffer_size: 1000
+  batch_size: 1000
+  learning_start: 1000
+  update_steps: 10
+  learning_rate: 0.001
+  gamma: 0.995
+  gae_lambda: 0.95
+  clip_coef: 0.9
+  vf_coef: 0.95
+  max_grad_norm: 1.0
+  normalize_advantages: False
+  clip_vloss: True
+  target_kl: 0.025 # keep this
+
+  entropy_coef: 0.5
+  entropy_coef_start: 0.5
+  entropy_coef_end: 0.01
+  entropy_coef_rate: 5.0e-6
+  entropy_coef_decay_type: "Exponential"
+  entropy_coef_steps: 1_000_000
+-
+  side_name: "prey"
+  algorithm: "Random"
+  model_dir_save: ""
+  layer_type: "None"
+  hidden_layers: "None"
+  test_mode: True
+
