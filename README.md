@@ -1,3 +1,7 @@
+# About
+
+This repository contains the code and data used for experiments as part of my master thesis.
+
 # Installation
 
 There may be a problem with installing MAgent2 using `pip`. Issue can be found at https://github.com/Farama-Foundation/MAgent2/issues/19
